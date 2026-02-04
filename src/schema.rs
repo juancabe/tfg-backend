@@ -122,7 +122,6 @@ diesel::table! {
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
         forwarder_id -> Nullable<Uuid>,
-        delivery -> Jsonb,
     }
 }
 
@@ -146,17 +145,11 @@ diesel::table! {
 }
 
 diesel::table! {
-    template_field_mappings (template_id, field_id) {
-        template_id -> Uuid,
-        field_id -> Uuid,
-        json_key -> Text,
-    }
-}
-
-diesel::table! {
     template_fields (id) {
         id -> Uuid,
+        template_id -> Uuid,
         name -> Text,
+        json_key -> Text,
         repr_enum_value -> Int2,
         unit_enum_value -> Int2,
         unit_enum_other_payload -> Nullable<Text>,
@@ -195,8 +188,7 @@ diesel::joinable!(producers -> locations (location_id));
 diesel::joinable!(producers_for_groups -> groups (group_id));
 diesel::joinable!(producers_for_groups -> producers (producer_id));
 diesel::joinable!(refresh_tokens -> users (user_id));
-diesel::joinable!(template_field_mappings -> packet_templates (template_id));
-diesel::joinable!(template_field_mappings -> template_fields (field_id));
+diesel::joinable!(template_fields -> packet_templates (template_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     auth_methods,
@@ -214,7 +206,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     producers,
     producers_for_groups,
     refresh_tokens,
-    template_field_mappings,
     template_fields,
     users,
 );

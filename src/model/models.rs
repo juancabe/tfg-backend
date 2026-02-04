@@ -373,6 +373,8 @@ pub struct NewPacketTemplate {
 #[diesel(table_name = template_fields)]
 pub struct TemplateField {
     pub id: Uuid,
+    pub template_id: Uuid,
+    pub json_key: String,
     pub name: String,
     pub repr_enum_value: i16, // Map to FieldRepr
     pub unit_enum_value: i16, // Map to FieldUnit
@@ -386,25 +388,6 @@ pub struct NewTemplateField {
     pub repr_enum_value: i16,
     pub unit_enum_value: i16,
     pub unit_enum_other_payload: Option<String>,
-}
-
-#[derive(Debug, Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize)]
-#[diesel(belongs_to(PacketTemplate, foreign_key = template_id))]
-#[diesel(belongs_to(TemplateField, foreign_key = field_id))]
-#[diesel(primary_key(template_id, field_id))]
-#[diesel(table_name = template_field_mappings)]
-pub struct TemplateFieldMapping {
-    pub template_id: Uuid,
-    pub field_id: Uuid,
-    pub json_key: String,
-}
-
-#[derive(Debug, Insertable)]
-#[diesel(table_name = template_field_mappings)]
-pub struct NewTemplateFieldMapping {
-    pub template_id: Uuid,
-    pub field_id: Uuid,
-    pub json_key: String,
 }
 
 #[derive(Debug, Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize)]

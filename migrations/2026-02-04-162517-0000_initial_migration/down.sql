@@ -1,5 +1,4 @@
 DROP TABLE IF EXISTS data;
-DROP TABLE IF EXISTS template_field_mappings;
 DROP TABLE IF EXISTS template_fields;
 DROP TABLE IF EXISTS packet_templates;
 DROP TABLE IF EXISTS commands;
