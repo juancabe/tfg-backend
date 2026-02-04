@@ -2,7 +2,7 @@ use crate::dao::{DaoError, DbPool};
 use crate::model::models::{
     InternetAuth, MqttBrokerAuth, NewInternetAuth, NewProducer, NewProducerForGroup, Producer,
 };
-use chrono::Utc;
+use chrono::{SubsecRound, Utc};
 use diesel::prelude::*;
 use diesel::{ExpressionMethods, RunQueryDsl, SelectableHelper};
 use uuid::Uuid;
@@ -68,7 +68,7 @@ impl ProducerDao for PgProducerDao {
         use crate::schema::producers::dsl::*;
         let conn = &mut self.pool.get()?;
 
-        let now = Utc::now();
+        let now = Utc::now().round_subsecs(6);
 
         diesel::update(producers.find(search_id))
             .set(last_seen.eq(now))

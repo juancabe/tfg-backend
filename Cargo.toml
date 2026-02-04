@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 chrono = { version = "0.4.43", features = ["serde"] }
 diesel = { version = "2.3.6", features = ["chrono", "postgres", "r2d2", "serde_json", "uuid"] }
+diesel_migrations = { version = "2.3.1", features = ["postgres"] }
 dotenvy = "0.15.7"
 log = "0.4.29"
 r2d2 = "0.8.10"
