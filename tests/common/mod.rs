@@ -1,7 +1,5 @@
 use backend::dao::DbPool;
-use backend::model::models::{
-    Group, Location, NewGroup, NewLocation, NewProducer, NewUser, Producer, User,
-};
+use backend::model::models::{Group, Location, NewGroup, NewLocation, NewProducer, Producer, User};
 use diesel::prelude::*;
 use diesel::r2d2::{self, ConnectionManager};
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
