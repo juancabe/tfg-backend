@@ -384,6 +384,8 @@ pub struct TemplateField {
 #[derive(Debug, Insertable)]
 #[diesel(table_name = template_fields)]
 pub struct NewTemplateField {
+    pub template_id: Uuid,
+    pub json_key: String,
     pub name: String,
     pub repr_enum_value: i16,
     pub unit_enum_value: i16,
