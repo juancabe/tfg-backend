@@ -19,15 +19,15 @@ impl PgCommandDao {
 }
 
 impl CommandDao for PgCommandDao {
-    fn queue_command(&self, cmd: NewCommand) -> Result<Command, DaoError> {
+    fn queue_command(&self, _cmd: NewCommand) -> Result<Command, DaoError> {
         todo!()
     }
 
-    fn fetch_pending_commands(&self, producer_id: Uuid) -> Result<Vec<Command>, DaoError> {
+    fn fetch_pending_commands(&self, _producer_id: Uuid) -> Result<Vec<Command>, DaoError> {
         todo!()
     }
 
-    fn get_command_history(&self, producer_id: Uuid) -> Result<Vec<Command>, DaoError> {
+    fn get_command_history(&self, _producer_id: Uuid) -> Result<Vec<Command>, DaoError> {
         todo!()
     }
 }

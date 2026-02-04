@@ -24,7 +24,7 @@ impl PgIdentityDao {
 }
 
 impl IdentityDao for PgIdentityDao {
-    fn create_user(&self, new_user: NewUser) -> Result<User, DaoError> {
+    fn create_user(&self, _new_user: NewUser) -> Result<User, DaoError> {
         // Implementation placeholder
         // use crate::schema::users::dsl::*;
         // let conn = &mut self.pool.get()?;
@@ -32,23 +32,23 @@ impl IdentityDao for PgIdentityDao {
         todo!()
     }
 
-    fn find_by_login(&self, login_query: &str) -> Result<Option<User>, DaoError> {
+    fn find_by_login(&self, _login_query: &str) -> Result<Option<User>, DaoError> {
         todo!()
     }
 
-    fn find_by_id(&self, user_id: Uuid) -> Result<Option<User>, DaoError> {
+    fn find_by_id(&self, _user_id: Uuid) -> Result<Option<User>, DaoError> {
         todo!()
     }
 
-    fn add_auth_method(&self, auth: NewAuthMethod) -> Result<AuthMethod, DaoError> {
+    fn add_auth_method(&self, _auth: NewAuthMethod) -> Result<AuthMethod, DaoError> {
         todo!()
     }
 
-    fn rotate_refresh_token(&self, token: NewRefreshToken) -> Result<String, DaoError> {
+    fn rotate_refresh_token(&self, _token: NewRefreshToken) -> Result<String, DaoError> {
         todo!()
     }
 
-    fn verify_refresh_token(&self, token_hash_query: &str) -> Result<bool, DaoError> {
+    fn verify_refresh_token(&self, _token_hash_query: &str) -> Result<bool, DaoError> {
         todo!()
     }
 }
