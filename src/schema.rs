@@ -137,10 +137,8 @@ diesel::table! {
         id -> Uuid,
         user_id -> Uuid,
         claimed -> Bool,
-        token_hash -> Text,
         expires_at -> Timestamptz,
-        user_agent -> Text,
-        ip_address -> Text,
+        version_n -> Int8,
     }
 }
 

@@ -5,9 +5,10 @@ use backend::dao::producer::{PgProducerDao, ProducerDao};
 use backend::dao::telemetry::{PgTelemetryDao, TelemetryDao};
 use backend::dao::template::{PgTemplateDao, TemplateDao};
 use backend::model::models::{
-    GroupUpdate, NewAuthMethod, NewCommand, NewData, NewPacketTemplate, NewRefreshToken, NewUser,
-    NewTemplateField,
+    GroupUpdate, NewAuthMethod, NewCommand, NewData, NewPacketTemplate, NewRefreshToken,
+    NewTemplateField, NewUser, RefreshToken,
 };
+use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 
 mod common;
 
@@ -207,3 +208,49 @@ fn test_identity_lifecycle() {
     assert!(dao.verify_refresh_token(token_hash).unwrap());
 }
 
+#[test]
+fn test_identity_token_rotation() {
+    use backend::schema::refresh_tokens::dsl::*;
+    let ctx = common::setup();
+    let dao = PgIdentityDao::new(ctx.pool.clone());
+    let user = common::create_test_user(&ctx.pool, "rotation_test");
+
+    // Create a first token
+    let first_token_hash = "first_token";
+    let first_token_str = dao
+        .rotate_refresh_token(NewRefreshToken {
+            user_id: user.id,
+            token_hash: first_token_hash.to_string(),
+            expires_at: chrono::Utc::now() + chrono::Duration::days(1),
+            user_agent: "test_agent".to_string(),
+            ip_address: "127.0.0.1".to_string(),
+        })
+        .unwrap();
+    assert_eq!(first_token_str, first_token_hash);
+    assert!(dao.verify_refresh_token(first_token_hash).unwrap());
+
+    // Rotate the token
+    let second_token_hash = "second_token";
+    let second_token_str = dao
+        .rotate_refresh_token(NewRefreshToken {
+            user_id: user.id,
+            token_hash: second_token_hash.to_string(),
+            expires_at: chrono::Utc::now() + chrono::Duration::days(1),
+            user_agent: "test_agent_2".to_string(),
+            ip_address: "127.0.0.2".to_string(),
+        })
+        .unwrap();
+    assert_eq!(second_token_str, second_token_hash);
+
+    // 3. Verify the second token is valid and the first is not
+    assert!(dao.verify_refresh_token(second_token_hash).unwrap());
+    assert!(!dao.verify_refresh_token(first_token_hash).unwrap());
+
+    // Check the `claimed` flag in the database for the first token
+    let mut conn = ctx.pool.get().unwrap();
+    let first_token_db = refresh_tokens
+        .filter(token_hash.eq(first_token_hash))
+        .get_result::<RefreshToken>(&mut conn)
+        .unwrap();
+    assert!(first_token_db.claimed);
+}

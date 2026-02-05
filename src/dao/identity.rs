@@ -4,17 +4,15 @@ use diesel::prelude::*;
 use diesel::{ExpressionMethods, RunQueryDsl, SelectableHelper};
 use uuid::Uuid;
 
-// Trait Definition
 pub trait IdentityDao {
     fn create_user(&self, new_user: NewUser) -> Result<User, DaoError>;
     fn find_by_login(&self, login: &str) -> Result<Option<User>, DaoError>;
     fn find_by_id(&self, id: Uuid) -> Result<Option<User>, DaoError>;
     fn add_auth_method(&self, auth: NewAuthMethod) -> Result<AuthMethod, DaoError>;
-    fn rotate_refresh_token(&self, token: NewRefreshToken) -> Result<String, DaoError>;
-    fn verify_refresh_token(&self, token_hash: &str) -> Result<bool, DaoError>;
+    fn rotate_refresh_token(&self, token: NewRefreshToken) -> Result<i64, DaoError>;
+    fn verify_token(&self, user_id: &Uuid, version_n: i64) -> Result<bool, DaoError>;
 }
 
-// Concrete Implementation
 pub struct PgIdentityDao {
     pool: DbPool,
 }
@@ -68,31 +66,30 @@ impl IdentityDao for PgIdentityDao {
             .map_err(Into::into)
     }
 
-    fn rotate_refresh_token(&self, token: NewRefreshToken) -> Result<String, DaoError> {
+    fn rotate_refresh_token(&self, token: NewRefreshToken) -> Result<i64, DaoError> {
         use crate::schema::refresh_tokens::dsl::*;
         let conn = &mut self.pool.get()?;
 
-        // Invalidate all old tokens for this user (simple strategy)
-        // or just ensure we insert the new one.
-        // A common strategy is to invalidate the *family* of tokens,
-        // but here we just insert a new valid token.
-        // The service layer might invalidate old ones.
+        diesel::update(refresh_tokens)
+            .filter(user_id.eq(token.user_id))
+            .set(claimed.eq(true))
+            .execute(conn)?;
 
-        let created_token: String = diesel::insert_into(refresh_tokens)
+        let created_token: i64 = diesel::insert_into(refresh_tokens)
             .values(&token)
-            .returning(token_hash)
+            .returning(version_n)
             .get_result(conn)?;
 
         Ok(created_token)
     }
 
-    fn verify_refresh_token(&self, token_hash_query: &str) -> Result<bool, DaoError> {
+    fn verify_token(&self, user_id_in: &Uuid, version_n_in: i64) -> Result<bool, DaoError> {
         use crate::schema::refresh_tokens::dsl::*;
         let conn = &mut self.pool.get()?;
 
-        // Check if token exists, is not claimed (if you use rotation families), and not expired
         let count: i64 = refresh_tokens
-            .filter(token_hash.eq(token_hash_query))
+            .filter(user_id.eq(user_id_in))
+            .filter(version_n.eq(version_n_in))
             .filter(claimed.eq(false))
             .filter(expires_at.gt(chrono::Utc::now()))
             .count()

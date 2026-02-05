@@ -119,20 +119,17 @@ pub struct RefreshToken {
     pub id: Uuid,
     pub user_id: Uuid,
     pub claimed: bool,
-    pub token_hash: String,
     pub expires_at: DateTime<Utc>,
-    pub user_agent: String,
-    pub ip_address: String,
+    pub version_n: i64,
 }
 
 #[derive(Debug, Insertable)]
 #[diesel(table_name = refresh_tokens)]
 pub struct NewRefreshToken {
     pub user_id: Uuid,
-    pub token_hash: String,
     pub expires_at: DateTime<Utc>,
-    pub user_agent: String,
-    pub ip_address: String,
+    // pub user_agent: String,
+    // pub ip_address: String,
 }
 
 // =========================================================================

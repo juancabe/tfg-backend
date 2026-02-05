@@ -32,7 +32,11 @@ impl<D: GroupDao> GroupAccessService<D> {
         }
     }
 
-    pub fn get_role(&self, user_id: Uuid, group_id: Uuid) -> Result<Option<GroupRole>, ServiceError> {
+    pub fn get_role(
+        &self,
+        user_id: Uuid,
+        group_id: Uuid,
+    ) -> Result<Option<GroupRole>, ServiceError> {
         Ok(Some(self.dao.check_permission(user_id, group_id)?))
     }
 }

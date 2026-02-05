@@ -7,4 +7,22 @@ pub mod producer_access;
 pub mod telemetry;
 pub mod template;
 
-pub use auth::ServiceError;
+use thiserror::Error;
+
+use crate::dao::DaoError;
+
+#[derive(Error, Debug)]
+pub enum ServiceError {
+    #[error("Forbidden access")]
+    Forbidden,
+    #[error("Forbidden access due to JWT: {0}")]
+    ForbiddenJWT(#[from] jsonwebtoken::errors::Error),
+    #[error("Resource not found")]
+    NotFound,
+    #[error("Invalid state")]
+    InvalidState,
+    #[error("Conflict detected")]
+    Conflict,
+    #[error("Database error: {0}")]
+    DbError(#[from] DaoError),
+}
