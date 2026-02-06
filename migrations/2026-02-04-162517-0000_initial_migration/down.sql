@@ -13,7 +13,7 @@ DROP TABLE IF EXISTS group_members;
 DROP TABLE IF EXISTS groups;
 DROP TABLE IF EXISTS locations;
 DROP TABLE IF EXISTS refresh_tokens;
-DROP TABLE IF EXISTS auth_methods;
+DROP TABLE IF EXISTS email_auth_methods;
 DROP TABLE IF EXISTS users;
 
 DROP FUNCTION IF EXISTS update_updated_at_column;

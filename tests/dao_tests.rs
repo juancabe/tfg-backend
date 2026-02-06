@@ -5,7 +5,7 @@ use backend::dao::producer::{PgProducerDao, ProducerDao};
 use backend::dao::telemetry::{PgTelemetryDao, TelemetryDao};
 use backend::dao::template::{PgTemplateDao, TemplateDao};
 use backend::model::models::{
-    GroupUpdate, NewAuthMethod, NewCommand, NewData, NewPacketTemplate, NewRefreshToken,
+    GroupUpdate, NewCommand, NewData, NewEmailAuthMethod, NewPacketTemplate, NewRefreshToken,
     NewTemplateField, NewUser, RefreshToken,
 };
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
@@ -176,6 +176,8 @@ fn test_identity_lifecycle() {
             login: "test_identity",
         })
         .unwrap();
+    let email = "email@email.com";
+    let hashed_pass = "this_is_a_hash_believe_me";
 
     let fetched_by_login = dao.find_by_login("test_identity").unwrap().unwrap();
     assert_eq!(fetched_by_login.id, user.id);
@@ -184,28 +186,22 @@ fn test_identity_lifecycle() {
     assert_eq!(fetched_by_id.login, "test_identity");
 
     let auth = dao
-        .add_auth_method(NewAuthMethod {
+        .add_email_auth_method(NewEmailAuthMethod {
             user_id: user.id,
-            is_primary_auth: true,
-            kind: 1,
-            auth_data: serde_json::json!({"hash": "password_hash"}),
+            email,
+            hashed_pass,
         })
         .unwrap();
     assert_eq!(auth.user_id, user.id);
 
-    let token_hash = "some_random_token_hash";
-    let token_str = dao
+    let token_version_n = dao
         .rotate_refresh_token(NewRefreshToken {
             user_id: user.id,
-            token_hash: token_hash.to_string(),
             expires_at: chrono::Utc::now() + chrono::Duration::days(1),
-            user_agent: "test_agent".to_string(),
-            ip_address: "127.0.0.1".to_string(),
         })
         .unwrap();
 
-    assert_eq!(token_str, token_hash);
-    assert!(dao.verify_refresh_token(token_hash).unwrap());
+    assert!(dao.verify_token(&user.id, token_version_n).unwrap());
 }
 
 #[test]
@@ -216,40 +212,31 @@ fn test_identity_token_rotation() {
     let user = common::create_test_user(&ctx.pool, "rotation_test");
 
     // Create a first token
-    let first_token_hash = "first_token";
-    let first_token_str = dao
+    let first_token_version_n = dao
         .rotate_refresh_token(NewRefreshToken {
             user_id: user.id,
-            token_hash: first_token_hash.to_string(),
             expires_at: chrono::Utc::now() + chrono::Duration::days(1),
-            user_agent: "test_agent".to_string(),
-            ip_address: "127.0.0.1".to_string(),
         })
         .unwrap();
-    assert_eq!(first_token_str, first_token_hash);
-    assert!(dao.verify_refresh_token(first_token_hash).unwrap());
+    assert!(dao.verify_token(&user.id, first_token_version_n).unwrap());
 
     // Rotate the token
-    let second_token_hash = "second_token";
-    let second_token_str = dao
+    let second_token_version_n = dao
         .rotate_refresh_token(NewRefreshToken {
             user_id: user.id,
-            token_hash: second_token_hash.to_string(),
             expires_at: chrono::Utc::now() + chrono::Duration::days(1),
-            user_agent: "test_agent_2".to_string(),
-            ip_address: "127.0.0.2".to_string(),
         })
         .unwrap();
-    assert_eq!(second_token_str, second_token_hash);
 
     // 3. Verify the second token is valid and the first is not
-    assert!(dao.verify_refresh_token(second_token_hash).unwrap());
-    assert!(!dao.verify_refresh_token(first_token_hash).unwrap());
+    assert!(dao.verify_token(&user.id, second_token_version_n).unwrap());
+    assert!(!dao.verify_token(&user.id, first_token_version_n).unwrap());
 
     // Check the `claimed` flag in the database for the first token
     let mut conn = ctx.pool.get().unwrap();
     let first_token_db = refresh_tokens
-        .filter(token_hash.eq(first_token_hash))
+        .filter(version_n.eq(first_token_version_n))
+        .filter(user_id.eq(user.id))
         .get_result::<RefreshToken>(&mut conn)
         .unwrap();
     assert!(first_token_db.claimed);

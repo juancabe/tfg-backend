@@ -1,15 +1,37 @@
 use crate::dao::{DaoError, DbPool};
-use crate::model::models::{AuthMethod, NewAuthMethod, NewRefreshToken, NewUser, User};
+use crate::helpers::auth::EmailPass;
+use crate::model::models::{EmailAuthMethod, NewEmailAuthMethod, NewRefreshToken, NewUser, User};
+use crate::schema;
 use diesel::prelude::*;
 use diesel::{ExpressionMethods, RunQueryDsl, SelectableHelper};
 use uuid::Uuid;
 
 pub trait IdentityDao {
+    /// inserts a `NewUser` in db `users` table
     fn create_user(&self, new_user: NewUser) -> Result<User, DaoError>;
+
+    /// finds `User` by `login`
     fn find_by_login(&self, login: &str) -> Result<Option<User>, DaoError>;
+
+    /// finds `User` by `id`
     fn find_by_id(&self, id: Uuid) -> Result<Option<User>, DaoError>;
-    fn add_auth_method(&self, auth: NewAuthMethod) -> Result<AuthMethod, DaoError>;
+
+    /// finds `User` by `id`
+    fn find_by_email_pass(&self, email_pass: EmailPass) -> Result<Option<User>, DaoError>;
+
+    /// inserts a `NewEmailAuthMethod` in db `email_auth_methods` table
+    fn add_email_auth_method(&self, auth: NewEmailAuthMethod) -> Result<EmailAuthMethod, DaoError>;
+
+    /// sets all other `user_id` `refresh_tokens` to `claimed` and inserts new one
+    /// # Returns
+    /// The new token `version_n`
     fn rotate_refresh_token(&self, token: NewRefreshToken) -> Result<i64, DaoError>;
+
+    /// verifies wether certain `user_id` `refresh_token` exists and is currently on `version_n` version_n
+    ///
+    /// # Returns
+    /// - true: parameters match
+    /// - false: parameters do not match
     fn verify_token(&self, user_id: &Uuid, version_n: i64) -> Result<bool, DaoError>;
 }
 
@@ -56,12 +78,12 @@ impl IdentityDao for PgIdentityDao {
             .map_err(Into::into)
     }
 
-    fn add_auth_method(&self, auth: NewAuthMethod) -> Result<AuthMethod, DaoError> {
-        use crate::schema::auth_methods::dsl::*;
+    fn add_email_auth_method(&self, auth: NewEmailAuthMethod) -> Result<EmailAuthMethod, DaoError> {
+        use crate::schema::email_auth_methods::dsl::*;
         let conn = &mut self.pool.get()?;
-        diesel::insert_into(auth_methods)
+        diesel::insert_into(email_auth_methods)
             .values(&auth)
-            .returning(AuthMethod::as_returning())
+            .returning(EmailAuthMethod::as_returning())
             .get_result(conn)
             .map_err(Into::into)
     }
@@ -75,12 +97,12 @@ impl IdentityDao for PgIdentityDao {
             .set(claimed.eq(true))
             .execute(conn)?;
 
-        let created_token: i64 = diesel::insert_into(refresh_tokens)
+        let created_token_version_n: i64 = diesel::insert_into(refresh_tokens)
             .values(&token)
             .returning(version_n)
             .get_result(conn)?;
 
-        Ok(created_token)
+        Ok(created_token_version_n)
     }
 
     fn verify_token(&self, user_id_in: &Uuid, version_n_in: i64) -> Result<bool, DaoError> {
@@ -96,5 +118,18 @@ impl IdentityDao for PgIdentityDao {
             .get_result(conn)?;
 
         Ok(count > 0)
+    }
+
+    fn find_by_email_pass(&self, email_pass: EmailPass) -> Result<Option<User>, DaoError> {
+        use crate::schema::email_auth_methods::dsl::*;
+        let conn = &mut self.pool.get()?;
+        let user = email_auth_methods
+            .inner_join(schema::users::table)
+            .filter(email.eq(email_pass.email))
+            .filter(hashed_pass.eq(email_pass.hashed_pass))
+            .select(User::as_select())
+            .first(conn)
+            .optional()?;
+        Ok(user)
     }
 }

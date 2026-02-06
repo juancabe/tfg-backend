@@ -3,16 +3,21 @@ pub mod auth_controller;
 use std::{env, net::SocketAddr, sync::Arc};
 
 use axum::{
-    Json, extract::rejection::JsonRejection, response::IntoResponse,
-    routing::MethodRouter,
+    Json, Router,
+    extract::rejection::JsonRejection,
+    response::IntoResponse,
+    routing::{MethodRouter, post},
 };
 use diesel::{PgConnection, r2d2::ConnectionManager};
 use dotenvy::dotenv;
+use r2d2::Pool;
 use serde::Serialize;
 use thiserror::Error;
 use tokio::io;
 
-use crate::MAX_DB_POOL_SIZE;
+use crate::{MAX_DB_POOL_SIZE, service::ServiceError};
+
+pub type DbPool = Pool<ConnectionManager<PgConnection>>;
 
 #[derive(Debug, Error)]
 pub enum InterfaceError {
@@ -32,13 +37,18 @@ impl Interface {
         dotenv().ok();
         let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
         let manager = ConnectionManager::<PgConnection>::new(database_url);
-        let pool = r2d2::Pool::builder()
+        let pool: DbPool = r2d2::Pool::builder()
             .max_size(MAX_DB_POOL_SIZE)
             .build(manager)?;
 
-        let router = MethodRouter::new().with_state(pool);
+        let app = Router::new()
+            .route(
+                "/auth/refresh",
+                post(auth_controller::AuthController::post_refresh),
+            )
+            .with_state(pool);
 
-        axum::serve(listener, router).await.map_err(Into::into)
+        axum::serve(listener, app).await.map_err(Into::into)
     }
 }
 
@@ -46,6 +56,8 @@ impl Interface {
 pub enum ApiError {
     #[error("JSON payload rejected")]
     JsonRejection(#[from] JsonRejection),
+    #[error("Service error: {0}")]
+    ServiceError(#[from] ServiceError),
 }
 
 /// How error responses will be serialized
@@ -69,6 +81,17 @@ impl IntoResponse for ApiError {
                 json_rejection.body_text(),
                 Some(self),
             ),
+            ApiError::ServiceError(service_err) => {
+                let status = match service_err {
+                    ServiceError::Forbidden => axum::http::StatusCode::FORBIDDEN,
+                    ServiceError::ForbiddenJWT(error) => todo!(),
+                    ServiceError::NotFound => todo!(),
+                    ServiceError::InvalidState => todo!(),
+                    ServiceError::Conflict => todo!(),
+                    ServiceError::DbError(dao_error) => todo!(),
+                };
+                (status, service_err.to_string(), Some(self))
+            }
         };
 
         let mut response = (status, Json(ErrorResponse::from(message))).into_response();

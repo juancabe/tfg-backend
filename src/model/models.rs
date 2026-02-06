@@ -94,22 +94,24 @@ pub struct NewUser<'a> {
 
 #[derive(Debug, Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize)]
 #[diesel(belongs_to(User))]
-#[diesel(table_name = auth_methods)]
-pub struct AuthMethod {
+#[diesel(table_name = email_auth_methods)]
+pub struct EmailAuthMethod {
     pub id: Uuid,
     pub user_id: Uuid,
-    pub is_primary_auth: bool,
-    pub kind: i16, // Map to AuthKind
-    pub auth_data: JsonValue,
+    pub email: String,
+    pub hashed_pass: String,
+    pub is_verified: bool,
+    pub created_at: DateTime<Utc>,
+    pub verified_at: DateTime<Utc>,
+    pub changed_pass_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Insertable)]
-#[diesel(table_name = auth_methods)]
-pub struct NewAuthMethod {
+#[diesel(table_name = email_auth_methods)]
+pub struct NewEmailAuthMethod<'a> {
     pub user_id: Uuid,
-    pub is_primary_auth: bool,
-    pub kind: i16,
-    pub auth_data: JsonValue,
+    pub email: &'a str,
+    pub hashed_pass: &'a str,
 }
 
 #[derive(Debug, Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize)]

@@ -24,15 +24,20 @@ CREATE TRIGGER update_users_updated_at
     FOR EACH ROW
     EXECUTE PROCEDURE update_updated_at_column();
 
--- Auth Methods
-CREATE TABLE auth_methods (
+CREATE TABLE email_auth_methods (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    is_primary_auth BOOLEAN NOT NULL DEFAULT FALSE,
-    kind SMALLINT NOT NULL,
-    auth_data JSONB NOT NULL
+    email TEXT NOT NULL,
+    hashed_pass TEXT NOT NULL,
+    is_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    verified_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    changed_pass_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_email_auth_email UNIQUE (email)
 );
-CREATE INDEX idx_auth_methods_data ON auth_methods USING GIN (auth_data);
+
+CREATE UNIQUE INDEX idx_email_auth_lower_email 
+ON email_auth_methods (lower(email));
 
 -- Refresh Tokens
 CREATE TABLE refresh_tokens (
@@ -177,7 +182,7 @@ CREATE TABLE data (
     payload JSONB NOT NULL
 );
 
-CREATE INDEX idx_auth_methods_user_id ON auth_methods(user_id);
+CREATE INDEX idx_email_auth_user_id ON email_auth_methods(user_id);
 CREATE INDEX idx_refresh_tokens_user_id ON refresh_tokens(user_id);
 CREATE INDEX idx_groups_owner_id ON groups(owner_user_id);
 CREATE INDEX idx_groups_location_id ON groups(location_id);

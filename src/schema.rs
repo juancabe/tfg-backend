@@ -1,16 +1,6 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
-    auth_methods (id) {
-        id -> Uuid,
-        user_id -> Uuid,
-        is_primary_auth -> Bool,
-        kind -> Int2,
-        auth_data -> Jsonb,
-    }
-}
-
-diesel::table! {
     commands (id) {
         id -> Uuid,
         target_producer_id -> Uuid,
@@ -28,6 +18,19 @@ diesel::table! {
         template_id -> Uuid,
         recv_at -> Timestamptz,
         payload -> Jsonb,
+    }
+}
+
+diesel::table! {
+    email_auth_methods (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        email -> Text,
+        hashed_pass -> Text,
+        is_verified -> Bool,
+        created_at -> Timestamptz,
+        verified_at -> Timestamptz,
+        changed_pass_at -> Timestamptz,
     }
 }
 
@@ -164,10 +167,10 @@ diesel::table! {
     }
 }
 
-diesel::joinable!(auth_methods -> users (user_id));
 diesel::joinable!(commands -> producers (target_producer_id));
 diesel::joinable!(data -> packet_templates (template_id));
 diesel::joinable!(data -> producers (producer_id));
+diesel::joinable!(email_auth_methods -> users (user_id));
 diesel::joinable!(favorite_groups -> groups (group_id));
 diesel::joinable!(favorite_groups -> users (user_id));
 diesel::joinable!(favorite_producers -> producers (producer_id));
@@ -189,9 +192,9 @@ diesel::joinable!(refresh_tokens -> users (user_id));
 diesel::joinable!(template_fields -> packet_templates (template_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
-    auth_methods,
     commands,
     data,
+    email_auth_methods,
     favorite_groups,
     favorite_producers,
     group_join_requests,
