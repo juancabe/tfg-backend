@@ -1,5 +1,14 @@
+use std::mem;
+
 use chrono::{DateTime, Utc};
-use diesel::prelude::*;
+use diesel::{
+    deserialize::{self, FromSql, FromSqlRow},
+    expression::AsExpression,
+    pg::Pg,
+    prelude::*,
+    serialize::{self, Output, ToSql},
+    sql_types::SmallInt,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use uuid::Uuid;
@@ -17,7 +26,8 @@ pub enum AuthKind {
     OAuth = 2,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, AsExpression, FromSqlRow)]
+#[diesel(sql_type = SmallInt)]
 #[repr(i16)]
 pub enum GroupModification {
     AllCanPublish = 1,
@@ -25,12 +35,110 @@ pub enum GroupModification {
     OwnerCanPublish = 3,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+impl GroupModification {
+    fn as_i16(&self) -> &i16 {
+        // SAFETY:
+        // This is safe because GroupModification uses #[repr(i16)]
+        unsafe { mem::transmute(self) }
+    }
+
+    pub fn satisfies(&self, other: Self) -> bool {
+        other as i16 <= *self as i16
+    }
+}
+
+impl TryFrom<i16> for GroupModification {
+    type Error = &'static str;
+
+    fn try_from(value: i16) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::AllCanPublish),
+            2 => Ok(Self::MembersCanPublish),
+            3 => Ok(Self::OwnerCanPublish),
+            _ => Err("Unexpected value"),
+        }
+    }
+}
+
+impl ToSql<SmallInt, Pg> for GroupModification {
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
+        // Delegate to the existing i16 implementation
+        <i16 as ToSql<SmallInt, Pg>>::to_sql(self.as_i16(), out)
+    }
+}
+
+impl FromSql<SmallInt, Pg> for GroupModification {
+    fn from_sql(
+        bytes: <diesel::pg::Pg as diesel::backend::Backend>::RawValue<'_>,
+    ) -> deserialize::Result<Self> {
+        let v = i16::from_sql(bytes)?;
+        Self::try_from(v).map_err(Into::into)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, AsExpression, FromSqlRow)]
+#[diesel(sql_type = SmallInt)]
 #[repr(i16)]
 pub enum GroupVisibility {
     AllCanView = 1,
     MembersCanView = 2,
     OwnerCanView = 3,
+}
+
+impl GroupVisibility {
+    fn as_i16(&self) -> &i16 {
+        // SAFETY:
+        // This is safe because GroupVisibility uses #[repr(i16)]
+        unsafe { mem::transmute(self) }
+    }
+
+    /// Check wether _user state_ satisfies `Self`
+    ///
+    /// # Examples
+    /// (user_id == owner_id) satisfies `Self::OwnerCanView`
+    /// (user_id) != owner_id, user_is_group_member == true satisfies `Self::MembersCanView`
+    /// (user_id) != owner_id, user_is_group_member == false satisfies `Self::AllCanView`
+    pub fn is_satisfied_by<Identifier: Eq>(
+        &self,
+        user_id: Identifier,
+        owner_id: Identifier,
+        user_is_group_member: bool,
+    ) -> bool {
+        match self {
+            GroupVisibility::AllCanView => true,
+            GroupVisibility::MembersCanView => user_is_group_member,
+            GroupVisibility::OwnerCanView => user_id == owner_id,
+        }
+    }
+}
+
+impl ToSql<SmallInt, Pg> for GroupVisibility {
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
+        // Delegate to the existing i16 implementation
+        <i16 as ToSql<SmallInt, Pg>>::to_sql(self.as_i16(), out)
+    }
+}
+
+impl FromSql<SmallInt, Pg> for GroupVisibility {
+    fn from_sql(
+        bytes: <diesel::pg::Pg as diesel::backend::Backend>::RawValue<'_>,
+    ) -> deserialize::Result<Self> {
+        let v = i16::from_sql(bytes)?;
+        Self::try_from(v).map_err(Into::into)
+    }
+}
+
+impl TryFrom<i16> for GroupVisibility {
+    type Error = &'static str;
+
+    fn try_from(value: i16) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::AllCanView),
+            2 => Ok(Self::MembersCanView),
+            3 => Ok(Self::OwnerCanView),
+            _ => Err("Unexpected value"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -170,8 +278,8 @@ pub struct Group {
     pub is_personal_group: bool,
     pub name: String,
     pub description: String,
-    pub modification: i16, // Map to GroupModification
-    pub visibility: i16,   // Map to GroupVisibility
+    pub modification: GroupModification,
+    pub visibility: GroupVisibility,
 }
 
 #[derive(Debug, Insertable)]

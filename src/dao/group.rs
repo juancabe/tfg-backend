@@ -20,6 +20,12 @@ pub trait GroupDao {
     fn create_group(&self, new_group: NewGroup) -> Result<Group, DaoError>;
     fn update_group(&self, group_id: Uuid, update: GroupUpdate) -> Result<Group, DaoError>;
     fn get_user_groups(&self, user_id: Uuid) -> Result<Vec<Group>, DaoError>;
+    // Returns producer's groups, including main group
+    fn get_producer_groups(
+        &self,
+        producer_id: Uuid,
+        producer_main_group_id: Uuid,
+    ) -> Result<Vec<Group>, DaoError>;
 
     fn add_member(&self, group_id: Uuid, user_id: Uuid) -> Result<(), DaoError>;
     fn remove_member(&self, group_id: Uuid, user_id: Uuid) -> Result<(), DaoError>;
@@ -33,8 +39,15 @@ pub trait GroupDao {
     fn toggle_favorite_group(&self, user_id: Uuid, group_id: Uuid) -> Result<bool, DaoError>;
 }
 
+#[derive(Clone)]
 pub struct PgGroupDao {
     pool: DbPool,
+}
+
+impl From<DbPool> for PgGroupDao {
+    fn from(value: DbPool) -> Self {
+        Self::new(value)
+    }
 }
 
 impl PgGroupDao {
@@ -89,6 +102,31 @@ impl GroupDao for PgGroupDao {
         owned_groups.dedup_by_key(|g| g.id);
 
         Ok(owned_groups)
+    }
+
+    fn get_producer_groups(
+        &self,
+        producer_id_in: Uuid,
+        producer_main_group_id: Uuid,
+    ) -> Result<Vec<Group>, DaoError> {
+        use crate::schema::{groups, producers_for_groups};
+        let conn = &mut self.pool.get()?;
+
+        let mut extra = producers_for_groups::table
+            .filter(producers_for_groups::producer_id.eq(producer_id_in))
+            .inner_join(groups::table)
+            .select(Group::as_select())
+            .load(conn)
+            .map_err(DaoError::from)?;
+
+        let main = groups::table
+            .find(producer_main_group_id)
+            .select(Group::as_select())
+            .first(conn)
+            .optional()?.ok_or(DaoError::OtherRare(format!("Producer: {producer_id_in} doesn't have a valid main group: {producer_main_group_id}")))?;
+
+        extra.push(main);
+        Ok(extra)
     }
 
     fn add_member(&self, group_id_in: Uuid, user_id_in: Uuid) -> Result<(), DaoError> {

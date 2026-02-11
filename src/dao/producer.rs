@@ -16,6 +16,7 @@ pub enum ProducerAuthCredentials {
 pub trait ProducerDao {
     fn create_producer(&self, new_producer: NewProducer) -> Result<Producer, DaoError>;
     fn get_by_id(&self, id: Uuid) -> Result<Option<Producer>, DaoError>;
+    fn get_by_group_id(&self, id: Uuid) -> Result<Vec<Producer>, DaoError>;
     fn update_last_seen(&self, id: Uuid) -> Result<(), DaoError>;
 
     fn share_with_group(&self, producer_id: Uuid, group_id: Uuid) -> Result<(), DaoError>;
@@ -32,8 +33,15 @@ pub trait ProducerDao {
     fn get_auth_credentials(&self, producer_id: Uuid) -> Result<ProducerAuthCredentials, DaoError>;
 }
 
+#[derive(Clone)]
 pub struct PgProducerDao {
     pool: DbPool,
+}
+
+impl From<DbPool> for PgProducerDao {
+    fn from(value: DbPool) -> Self {
+        Self::new(value)
+    }
 }
 
 impl PgProducerDao {
@@ -61,6 +69,19 @@ impl ProducerDao for PgProducerDao {
             .select(Producer::as_select())
             .load(conn)
             .map(|r| r.into_iter().next())
+            .map_err(Into::into)
+    }
+
+    fn get_by_group_id(&self, group_id_in: Uuid) -> Result<Vec<Producer>, DaoError> {
+        use crate::schema::producers::dsl::*;
+        use crate::schema::producers_for_groups;
+        let conn = &mut self.pool.get()?;
+
+        producers_for_groups::table
+            .inner_join(producers)
+            .filter(producers_for_groups::group_id.eq(group_id_in))
+            .select(Producer::as_select())
+            .load(conn)
             .map_err(Into::into)
     }
 
@@ -169,7 +190,7 @@ impl ProducerDao for PgProducerDao {
             Some((Some(internet), None)) => Ok(ProducerAuthCredentials::Internet(internet)),
             Some((None, Some(mqtt))) => Ok(ProducerAuthCredentials::Mqtt(mqtt)),
             Some((None, None)) => Ok(ProducerAuthCredentials::None), // Producer exists, but no auth set
-            Some((Some(a), Some(b))) => Err(DaoError::Other(format!(
+            Some((Some(a), Some(b))) => Err(DaoError::OtherRare(format!(
                 "Found a producer with two auths: {a:?}, {b:?}"
             ))),
             None => Err(DaoError::NotFound),

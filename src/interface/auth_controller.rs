@@ -1,15 +1,16 @@
+use crate::{
+    dao::identity::PgIdentityDao,
+    helpers::{auth::AuthMethod, state::AppState},
+    interface::ApiError,
+    service::auth::{AuthService, RefreshSessionOut, TokenPair},
+};
 use axum::{
     Json,
     extract::{State, rejection::JsonRejection},
+    http::StatusCode,
+    response::IntoResponse,
 };
 use serde::{Deserialize, Serialize};
-
-use crate::{
-    dao::identity::PgIdentityDao,
-    helpers::auth::AuthMethod,
-    interface::{ApiError, DbPool},
-    service::auth::{AuthService, RefreshSessionOut, TokenPair},
-};
 
 pub struct AuthController {}
 
@@ -55,6 +56,16 @@ pub enum LoginResponse {
     InvalidCredentials,
 }
 
+impl IntoResponse for LoginResponse {
+    fn into_response(self) -> axum::response::Response {
+        match &self {
+            LoginResponse::Correct(_) => (StatusCode::OK, Json(self)),
+            LoginResponse::InvalidCredentials => (StatusCode::UNAUTHORIZED, Json(self)),
+        }
+        .into_response()
+    }
+}
+
 #[derive(Deserialize, Serialize, Debug)]
 pub struct CorrectLoginResponse {
     pub session_token: String,
@@ -72,7 +83,7 @@ impl From<TokenPair> for CorrectLoginResponse {
 
 impl AuthController {
     pub async fn post_refresh(
-        State(pool): State<DbPool>,
+        State(AppState { pool }): State<AppState>,
         payload: Result<Json<RefreshPayload>, JsonRejection>,
     ) -> Result<Json<RefreshSessionResponse>, ApiError> {
         let payload_refresh = &payload?.refresh_token;
@@ -82,21 +93,21 @@ impl AuthController {
         Ok(Json(output.into()))
     }
 
-    pub async fn register(
-        State(pool): State<DbPool>,
+    pub async fn post_register(
+        State(AppState { pool }): State<AppState>,
         payload: Result<Json<RegisterPayload>, JsonRejection>,
-    ) -> Result<RegisterResponse, ApiError> {
+    ) -> Result<Json<RegisterResponse>, ApiError> {
         let payload = payload?.0;
         let dao = PgIdentityDao::new(pool);
         let service = AuthService::new(dao);
         let created = service.register_user(payload.into())?;
-        Ok(RegisterResponse {
+        Ok(Json(RegisterResponse {
             login: created.login,
-        })
+        }))
     }
 
-    pub async fn login(
-        State(pool): State<DbPool>,
+    pub async fn post_login(
+        State(AppState { pool }): State<AppState>,
         payload: Result<Json<LoginPayload>, JsonRejection>,
     ) -> Result<LoginResponse, ApiError> {
         let payload = payload?.0;

@@ -19,10 +19,6 @@ pub enum ServiceError {
     ForbiddenJWT(#[from] jsonwebtoken::errors::Error),
     #[error("Resource not found")]
     NotFound,
-    #[error("Invalid state")]
-    InvalidState,
-    #[error("Conflict detected")]
-    Conflict,
     #[error("Database error: {0}")]
     DbError(#[from] DaoError),
 }

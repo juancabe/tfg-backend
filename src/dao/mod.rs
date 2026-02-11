@@ -30,7 +30,7 @@ pub enum DaoError {
     ForeignKeyViolation(String),
 
     #[error("Unexpected error: {0}")]
-    Other(String),
+    OtherRare(String),
 }
 
 impl DaoError {
@@ -42,7 +42,7 @@ impl DaoError {
         if update.eq(at_row) {
             Ok(())
         } else {
-            Err(Self::Other(format!(
+            Err(Self::OtherRare(format!(
                 "[{at_dao_fn}] expected updated row to contain new value ({update:?}) but contains ({at_row:?})"
             )))
         }

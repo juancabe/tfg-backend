@@ -1,12 +1,11 @@
 pub mod auth_controller;
+pub mod producer_controller;
 
 use std::{env, net::SocketAddr, sync::Arc};
 
 use axum::{
-    Json, Router,
-    extract::rejection::JsonRejection,
-    response::IntoResponse,
-    routing::{MethodRouter, post},
+    Json, Router, extract::rejection::JsonRejection, http::StatusCode, response::IntoResponse,
+    routing::post,
 };
 use diesel::{PgConnection, r2d2::ConnectionManager};
 use dotenvy::dotenv;
@@ -15,7 +14,10 @@ use serde::Serialize;
 use thiserror::Error;
 use tokio::io;
 
-use crate::{MAX_DB_POOL_SIZE, service::ServiceError};
+use crate::{
+    MAX_DB_POOL_SIZE, helpers::state::AppState, interface::auth_controller::AuthController,
+    service::ServiceError,
+};
 
 pub type DbPool = Pool<ConnectionManager<PgConnection>>;
 
@@ -41,12 +43,14 @@ impl Interface {
             .max_size(MAX_DB_POOL_SIZE)
             .build(manager)?;
 
+        let state = AppState { pool };
+
         let app = Router::new()
-            .route(
-                "/auth/refresh",
-                post(auth_controller::AuthController::post_refresh),
-            )
-            .with_state(pool);
+            // AuthController
+            .route("/auth/refresh", post(AuthController::post_refresh))
+            .route("/auth/login", post(AuthController::post_login))
+            .route("/auth/register", post(AuthController::post_register))
+            .with_state(state);
 
         axum::serve(listener, app).await.map_err(Into::into)
     }
@@ -83,12 +87,26 @@ impl IntoResponse for ApiError {
             ),
             ApiError::ServiceError(service_err) => {
                 let status = match service_err {
-                    ServiceError::Forbidden => axum::http::StatusCode::FORBIDDEN,
-                    ServiceError::ForbiddenJWT(error) => todo!(),
-                    ServiceError::NotFound => todo!(),
-                    ServiceError::InvalidState => todo!(),
-                    ServiceError::Conflict => todo!(),
-                    ServiceError::DbError(dao_error) => todo!(),
+                    ServiceError::Forbidden => StatusCode::FORBIDDEN,
+                    ServiceError::ForbiddenJWT(_error) => StatusCode::FORBIDDEN,
+                    ServiceError::NotFound => StatusCode::NOT_FOUND,
+                    ServiceError::DbError(dao_error) => match dao_error {
+                        crate::dao::DaoError::ConnectionError(error) => {
+                            log::warn!("{error:?}");
+                            StatusCode::INTERNAL_SERVER_ERROR
+                        }
+                        crate::dao::DaoError::DieselError(error) => {
+                            log::warn!("{error:?}");
+                            StatusCode::INTERNAL_SERVER_ERROR
+                        }
+                        crate::dao::DaoError::NotFound => StatusCode::INTERNAL_SERVER_ERROR,
+                        crate::dao::DaoError::UniqueViolation(_)
+                        | crate::dao::DaoError::ForeignKeyViolation(_) => StatusCode::CONFLICT,
+                        crate::dao::DaoError::OtherRare(e) => {
+                            log::warn!("{e:?}");
+                            StatusCode::INTERNAL_SERVER_ERROR
+                        }
+                    },
                 };
                 (status, service_err.to_string(), Some(self))
             }

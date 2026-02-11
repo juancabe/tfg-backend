@@ -1,14 +1,13 @@
-use std::{env, time::Duration};
+mod jwt;
+pub use jwt::JWT;
+use uuid::Uuid;
 
 use crate::helpers::auth::AuthMethod;
 use crate::interface::auth_controller::{LoginPayload, RegisterPayload};
 use crate::model::models::{NewEmailAuthMethod, NewUser, User};
 use crate::service::ServiceError;
+use crate::service::auth::jwt::JWTKind;
 use crate::{dao::identity::IdentityDao, model::models::NewRefreshToken};
-use chrono::{DateTime, Utc};
-use jsonwebtoken::{
-    Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation, decode, encode,
-};
 use serde::{Deserialize, Serialize};
 
 // Placeholder Inputs
@@ -80,6 +79,7 @@ impl<D: IdentityDao> AuthService<D> {
                 let refresh_token = JWT::new(
                     version_n,
                     user.login.clone(),
+                    user.id,
                     jwt_kind,
                     iat.timestamp(),
                     exp.timestamp(),
@@ -90,6 +90,7 @@ impl<D: IdentityDao> AuthService<D> {
                 let access_token = JWT::new(
                     version_n,
                     user.login,
+                    user.id,
                     jwt_kind,
                     iat.timestamp(),
                     exp.timestamp(),
@@ -115,7 +116,7 @@ impl<D: IdentityDao> AuthService<D> {
     /// # Use
     /// This is intended for use in an auth middleware.
     /// TODO: this should trigger a "Redis" db
-    pub fn validate_session(&self, session_token: &str) -> Result<User, ServiceError> {
+    pub fn validate_session(&self, session_token: &str) -> Result<JWT, ServiceError> {
         let decoded = JWT::decode(session_token, JWT::get_dec_key())?.claims;
 
         if decoded.is_refresh {
@@ -132,7 +133,7 @@ impl<D: IdentityDao> AuthService<D> {
             return Err(ServiceError::Forbidden);
         }
 
-        Ok(user)
+        Ok(decoded)
     }
 
     /// refresh_session
@@ -172,6 +173,7 @@ impl<D: IdentityDao> AuthService<D> {
         let new_refresh = JWT::new(
             new_version_n,
             decoded.login.clone(),
+            decoded.user_id,
             jwt_kind,
             iat.timestamp(),
             exp.timestamp(),
@@ -181,6 +183,7 @@ impl<D: IdentityDao> AuthService<D> {
         let new_session = JWT::new(
             new_version_n,
             decoded.login,
+            decoded.user_id,
             JWTKind::Session,
             iat.timestamp(),
             exp.timestamp(),
@@ -220,78 +223,11 @@ impl<D: IdentityDao> AuthService<D> {
 
         Ok(user)
     }
-}
 
-enum JWTKind {
-    Refresh,
-    Session,
-}
-
-impl JWTKind {
-    fn exp_offset_secs(&self) -> Duration {
-        match self {
-            JWTKind::Refresh => Duration::from_hours(24 * 14),
-            JWTKind::Session => Duration::from_mins(10),
-        }
-    }
-
-    pub fn get_iat_exp(&self) -> (DateTime<Utc>, DateTime<Utc>) {
-        let iat = chrono::Utc::now();
-        let exp = iat + self.exp_offset_secs();
-        (iat, exp)
-    }
-
-    pub fn is_refresh(&self) -> bool {
-        matches!(self, Self::Refresh)
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct JWT {
-    // claims
-    version_n: i64,
-    login: String,
-    iat: i64,
-    exp: i64,
-    is_refresh: bool,
-}
-
-lazy_static::lazy_static! {
-    static ref b64_key: String = env::var("JWT_KEY_BASE64").expect("Should be set/loaded");
-    static ref enc: EncodingKey = EncodingKey::from_base64_secret(&b64_key).expect("JWT key should be valid base64");
-    static ref dec: DecodingKey = DecodingKey::from_base64_secret(&b64_key).expect("JWT key should be valid base64");
-}
-
-impl JWT {
-    const ALGORITHM: Algorithm = Algorithm::HS256;
-
-    fn get_dec_key() -> &'static DecodingKey {
-        &dec
-    }
-
-    fn get_enc_key() -> &'static EncodingKey {
-        &enc
-    }
-
-    fn new(version_n: i64, login: String, jwt_kind: JWTKind, iat: i64, exp: i64) -> Self {
-        Self {
-            version_n,
-            login,
-            iat,
-            exp,
-            is_refresh: jwt_kind.is_refresh(),
-        }
-    }
-
-    pub fn encode(&self, key: &EncodingKey) -> Result<String, jsonwebtoken::errors::Error> {
-        encode(&Header::new(Self::ALGORITHM), &self, key)
-    }
-
-    pub fn decode(
-        token: impl AsRef<[u8]>,
-        key: &DecodingKey,
-    ) -> Result<TokenData<Self>, jsonwebtoken::errors::Error> {
-        let validation = Validation::new(Self::ALGORITHM);
-        decode(token, key, &validation)
+    pub fn get_user(&self, user_id: Uuid) -> Result<User, ServiceError> {
+        Ok(self
+            ._dao
+            .find_by_id(user_id)?
+            .ok_or(ServiceError::NotFound)?)
     }
 }
