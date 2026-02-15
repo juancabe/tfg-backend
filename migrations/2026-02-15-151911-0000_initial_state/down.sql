@@ -1,0 +1,18 @@
+DROP TABLE IF EXISTS data;
+DROP TABLE IF EXISTS template_fields;
+DROP TABLE IF EXISTS packet_templates;
+DROP TABLE IF EXISTS commands;
+DROP TABLE IF EXISTS mqtt_broker_auths;
+DROP TABLE IF EXISTS internet_auths;
+DROP TABLE IF EXISTS producers_for_groups;
+DROP TABLE IF EXISTS favorite_producers;
+DROP TABLE IF EXISTS producers;
+DROP TABLE IF EXISTS favorite_groups;
+DROP TABLE IF EXISTS groups;
+DROP TABLE IF EXISTS locations;
+DROP TABLE IF EXISTS refresh_tokens;
+DROP TABLE IF EXISTS email_auth_methods;
+DROP TABLE IF EXISTS users;
+
+DROP FUNCTION IF EXISTS update_updated_at_column;
+DROP EXTENSION IF EXISTS "uuid-ossp";
