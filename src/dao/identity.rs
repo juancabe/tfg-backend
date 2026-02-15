@@ -155,6 +155,19 @@ mod unit_test {
     }
 
     #[test]
+    fn test_create_user_duplicate() {
+        let ctx = setup();
+        let dao = PgIdentityDao::new(ctx.pool.clone());
+        let new_user = NewUser { login: "test_user" };
+
+        dao.create_user(new_user.clone())
+            .expect("Failed to create user");
+        let result = dao.create_user(new_user);
+
+        assert!(matches!(result, Err(DaoError::UniqueViolation(_))));
+    }
+
+    #[test]
     fn test_find_by_login() {
         let ctx = setup();
         let dao = PgIdentityDao::new(ctx.pool.clone());
@@ -167,6 +180,18 @@ mod unit_test {
     }
 
     #[test]
+    fn test_find_by_login_not_found() {
+        let ctx = setup();
+        let dao = PgIdentityDao::new(ctx.pool.clone());
+
+        let found = dao
+            .find_by_login("non_existent")
+            .expect("Failed to find user");
+
+        assert!(found.is_none());
+    }
+
+    #[test]
     fn test_find_by_id() {
         let ctx = setup();
         let dao = PgIdentityDao::new(ctx.pool.clone());
@@ -176,6 +201,16 @@ mod unit_test {
 
         assert!(found.is_some());
         assert_eq!(found.unwrap().login, user.login);
+    }
+
+    #[test]
+    fn test_find_by_id_not_found() {
+        let ctx = setup();
+        let dao = PgIdentityDao::new(ctx.pool.clone());
+
+        let found = dao.find_by_id(Uuid::new_v4()).expect("Failed to find user");
+
+        assert!(found.is_none());
     }
 
     #[test]
@@ -195,6 +230,30 @@ mod unit_test {
 
         assert_eq!(result.user_id, user.id);
         assert_eq!(result.email, "test@example.com");
+    }
+
+    #[test]
+    fn test_add_email_auth_method_duplicate_email() {
+        let ctx = setup();
+        let dao = PgIdentityDao::new(ctx.pool.clone());
+        let user1 = create_test_user(&ctx.pool, "user1");
+        let user2 = create_test_user(&ctx.pool, "user2");
+        let email = "test@example.com";
+
+        dao.add_email_auth_method(NewEmailAuthMethod {
+            user_id: user1.id,
+            email,
+            hashed_pass: "pass1",
+        })
+        .expect("Failed to add first auth method");
+
+        let result = dao.add_email_auth_method(NewEmailAuthMethod {
+            user_id: user2.id,
+            email,
+            hashed_pass: "pass2",
+        });
+
+        assert!(matches!(result, Err(DaoError::UniqueViolation(_))));
     }
 
     #[test]
@@ -223,6 +282,21 @@ mod unit_test {
     }
 
     #[test]
+    fn test_find_by_email_pass_not_found() {
+        let ctx = setup();
+        let dao = PgIdentityDao::new(ctx.pool.clone());
+
+        let found = dao
+            .find_by_email_pass(EmailPassFields {
+                email: "non_existent@example.com".to_string(),
+                hashed_pass: "wrong_password".to_string(),
+            })
+            .expect("Failed to find user");
+
+        assert!(found.is_none());
+    }
+
+    #[test]
     fn test_rotate_refresh_token() {
         let ctx = setup();
         let dao = PgIdentityDao::new(ctx.pool.clone());
@@ -238,6 +312,21 @@ mod unit_test {
             .expect("Failed to rotate token");
 
         assert!(version > 0);
+    }
+
+    #[test]
+    fn test_rotate_refresh_token_user_not_found() {
+        let ctx = setup();
+        let dao = PgIdentityDao::new(ctx.pool.clone());
+        let expires_at = Utc::now() + Duration::days(1);
+        let token = NewRefreshToken {
+            user_id: Uuid::new_v4(),
+            expires_at,
+        };
+
+        let result = dao.rotate_refresh_token(token);
+
+        assert!(matches!(result, Err(DaoError::ForeignKeyViolation(_))));
     }
 
     #[test]

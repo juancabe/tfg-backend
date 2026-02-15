@@ -74,7 +74,7 @@ pub struct User {
     pub refreshed_token_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Insertable)]
+#[derive(Debug, Insertable, Clone)]
 #[diesel(table_name = users)]
 pub struct NewUser<'a> {
     pub login: &'a str,
