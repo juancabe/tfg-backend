@@ -41,6 +41,7 @@ pub struct TokenPair {
     pub refresh_token: String,
 }
 
+// TODO: Integration test
 pub struct AuthService<D: IdentityDao> {
     _dao: D,
 }
@@ -63,7 +64,7 @@ impl<D: IdentityDao> AuthService<D> {
     ///
     /// # TODO
     /// TODO: Right now, for [`EmailPass`] _auth_ it doesn't check wether the email is veified
-    /// TODO: Test
+    /// TODO: Test (both)
     pub fn authenticate_user(&self, input: LoginInput) -> Result<Option<TokenPair>, ServiceError> {
         match input.auth_method {
             AuthMethod::EmailPass(email_pass) => {
@@ -97,7 +98,7 @@ impl<D: IdentityDao> AuthService<D> {
                     exp.timestamp(),
                 );
 
-                let jwt_kind = JWTKind::Refresh;
+                let jwt_kind = JWTKind::Session;
                 let (iat, exp) = jwt_kind.get_iat_exp();
                 let access_token = JWT::new(
                     version_n,
@@ -128,6 +129,8 @@ impl<D: IdentityDao> AuthService<D> {
     /// # Use
     /// This is intended for use in an auth middleware.
     /// TODO: this may use a "Redis" db
+    ///
+    /// TODO: Test (both)
     pub fn validate_session(&self, session_token: &str) -> Result<JWT, ServiceError> {
         let decoded = JWT::decode(session_token, JWT::get_dec_key())?.claims;
 
@@ -157,7 +160,7 @@ impl<D: IdentityDao> AuthService<D> {
     /// # Use
     /// Intended for use by a dedicated endpoint
     ///
-    /// TODO: Test
+    /// TODO: Test (both)
     pub fn refresh_session(&self, refresh_token: &str) -> Result<RefreshSessionOut, ServiceError> {
         let decoded = JWT::decode(refresh_token, JWT::get_dec_key())?.claims;
 
@@ -217,7 +220,7 @@ impl<D: IdentityDao> AuthService<D> {
     /// # Use
     /// Intended for use by a register endpoint
     ///
-    /// TODO: Test
+    /// TODO: Test (both)
     pub fn register_user(&self, input: RegisterInput) -> Result<RegisterResponse, ServiceError> {
         // The user insert operation needs to be atomic on the service level, if auth method
         // creation fails user needs to be deleted from DB
@@ -250,5 +253,94 @@ impl<D: IdentityDao> AuthService<D> {
 
         // TODO: Auth methods that don't require a confirmation's Session Tokens may be returned here
         Ok(RegisterResponse::Success)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dao::identity::PgIdentityDao;
+    use crate::helpers::users_auth::{EmailPassFields, EmailPass};
+    use crate::test_utils::setup;
+
+    #[test]
+    fn test_register_and_authenticate_integration() {
+        let ctx = setup();
+        let dao = PgIdentityDao::new(ctx.pool.clone());
+        let service = AuthService::new(dao);
+
+        let login = "test_user".to_string();
+        let email = "test@example.com".to_string();
+        let hashed_pass = "hashed_password".to_string();
+
+        let register_input = RegisterInput {
+            login: login.clone(),
+            auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                email: email.clone(),
+                hashed_pass: hashed_pass.clone(),
+            })),
+        };
+
+        // Act - Register
+        let register_res = service.register_user(register_input).expect("Failed to register user");
+        assert!(matches!(register_res, RegisterResponse::Success));
+
+        // Act - Authenticate
+        let login_input = LoginInput {
+            auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                email: email.clone(),
+                hashed_pass: hashed_pass.clone(),
+            })),
+        };
+
+        let token_pair = service.authenticate_user(login_input).expect("Failed to authenticate").expect("User should be found");
+        
+        assert!(!token_pair.session_token.is_empty());
+        assert!(!token_pair.refresh_token.is_empty());
+
+        // Act - Validate Session
+        let decoded = service.validate_session(&token_pair.session_token).expect("Failed to validate session");
+        assert_eq!(decoded.login, login);
+        assert!(!decoded.is_refresh);
+
+        // Act - Refresh Session
+        let refresh_out = service.refresh_session(&token_pair.refresh_token).expect("Failed to refresh session");
+        assert!(!refresh_out.session_token.is_empty());
+        assert!(!refresh_out.refresh_token.is_empty());
+
+        // Validate new session
+        let decoded_new = service.validate_session(&refresh_out.session_token).expect("Failed to validate new session");
+        assert_eq!(decoded_new.login, login);
+
+        // Old refresh token should be invalid now
+        let old_refresh_res = service.refresh_session(&token_pair.refresh_token);
+        assert!(old_refresh_res.is_err());
+    }
+
+    #[test]
+    fn test_authenticate_invalid_credentials() {
+        let ctx = setup();
+        let dao = PgIdentityDao::new(ctx.pool.clone());
+        let service = AuthService::new(dao);
+
+        let login_input = LoginInput {
+            auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                email: "nonexistent@example.com".to_string(),
+                hashed_pass: "wrong_password".to_string(),
+            })),
+        };
+
+        let result = service.authenticate_user(login_input).expect("Should not return error for invalid credentials");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_validate_invalid_token() {
+        let ctx = setup();
+        let dao = PgIdentityDao::new(ctx.pool.clone());
+        let service = AuthService::new(dao);
+
+        let result = service.validate_session("invalid.token.here");
+        assert!(result.is_err());
     }
 }
