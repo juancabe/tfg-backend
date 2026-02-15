@@ -113,7 +113,7 @@ pub struct RefreshToken {
     pub version_n: i64,
 }
 
-#[derive(Debug, Insertable)]
+#[derive(Debug, Insertable, Clone, Copy)]
 #[diesel(table_name = refresh_tokens)]
 pub struct NewRefreshToken {
     pub user_id: Uuid,

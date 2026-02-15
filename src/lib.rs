@@ -15,9 +15,12 @@
 //! - Exceptions may happen to occur, for example [`helpers`] Module types and (of course) [`std`] types can be returned whenever it's necessary, no need to wrap them.
 //! - In order to avoid _boilerplate burden_, [`service`] layer is used as a mapper, [`interface`] defined types *can* be directly accepted and returned on the [`service`] layer.
 //!
-//!
+
 pub mod dao;
 pub mod helpers;
 pub mod interface;
 pub mod model;
 pub mod service;
+
+#[cfg(test)]
+pub mod test_utils;

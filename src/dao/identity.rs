@@ -37,7 +37,6 @@ pub trait IdentityDao {
     fn verify_token(&self, user_id: &Uuid, version_n: i64) -> Result<bool, DaoError>;
 }
 
-// TODO: "Integration" test
 pub struct PgIdentityDao {
     pool: DbPool,
 }
@@ -49,7 +48,6 @@ impl PgIdentityDao {
 }
 
 impl IdentityDao for PgIdentityDao {
-    // TODO: Test
     fn create_user(&self, new_user: NewUser) -> Result<User, DaoError> {
         use crate::model::schema::users::dsl::*;
         let conn = &mut self.pool.get()?;
@@ -60,7 +58,6 @@ impl IdentityDao for PgIdentityDao {
             .map_err(Into::into)
     }
 
-    // TODO: Test
     fn find_by_login(&self, login_query: &str) -> Result<Option<User>, DaoError> {
         use crate::model::schema::users::dsl::*;
         let conn = &mut self.pool.get()?;
@@ -72,7 +69,6 @@ impl IdentityDao for PgIdentityDao {
             .map_err(Into::into)
     }
 
-    // TODO: Test
     fn find_by_id(&self, user_id_in: Uuid) -> Result<Option<User>, DaoError> {
         use crate::model::schema::users::dsl::*;
         let conn = &mut self.pool.get()?;
@@ -84,7 +80,6 @@ impl IdentityDao for PgIdentityDao {
             .map_err(Into::into)
     }
 
-    // TODO: Test
     fn add_email_auth_method(&self, auth: NewEmailAuthMethod) -> Result<EmailAuthMethod, DaoError> {
         use crate::model::schema::email_auth_methods::dsl::*;
         let conn = &mut self.pool.get()?;
@@ -95,7 +90,6 @@ impl IdentityDao for PgIdentityDao {
             .map_err(Into::into)
     }
 
-    // TODO: Test
     fn rotate_refresh_token(&self, token: NewRefreshToken) -> Result<i64, DaoError> {
         use crate::model::schema::refresh_tokens::dsl::*;
         let conn = &mut self.pool.get()?;
@@ -113,7 +107,6 @@ impl IdentityDao for PgIdentityDao {
         Ok(created_token_version_n)
     }
 
-    // TODO: Test
     fn verify_token(&self, user_id_in: &Uuid, version_n_in: i64) -> Result<bool, DaoError> {
         use crate::model::schema::refresh_tokens::dsl::*;
         let conn = &mut self.pool.get()?;
@@ -129,7 +122,6 @@ impl IdentityDao for PgIdentityDao {
         Ok(count > 0)
     }
 
-    // TODO: Test
     fn find_by_email_pass(&self, email_pass: EmailPassFields) -> Result<Option<User>, DaoError> {
         use crate::model::schema::email_auth_methods::dsl::*;
         let conn = &mut self.pool.get()?;
@@ -141,5 +133,217 @@ impl IdentityDao for PgIdentityDao {
             .first(conn)
             .optional()?;
         Ok(user)
+    }
+}
+
+#[cfg(test)]
+mod unit_test {
+    use super::*;
+    use crate::model::models::{NewEmailAuthMethod, NewRefreshToken, NewUser};
+    use crate::test_utils::{create_test_user, setup};
+    use chrono::{Duration, Utc};
+
+    #[test]
+    fn test_create_user() {
+        let ctx = setup();
+        let dao = PgIdentityDao::new(ctx.pool.clone());
+        let new_user = NewUser { login: "test_user" };
+
+        let result = dao.create_user(new_user).expect("Failed to create user");
+
+        assert_eq!(result.login, "test_user");
+    }
+
+    #[test]
+    fn test_find_by_login() {
+        let ctx = setup();
+        let dao = PgIdentityDao::new(ctx.pool.clone());
+        let user = create_test_user(&ctx.pool, "find_by_login");
+
+        let found = dao.find_by_login(&user.login).expect("Failed to find user");
+
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().id, user.id);
+    }
+
+    #[test]
+    fn test_find_by_id() {
+        let ctx = setup();
+        let dao = PgIdentityDao::new(ctx.pool.clone());
+        let user = create_test_user(&ctx.pool, "find_by_id");
+
+        let found = dao.find_by_id(user.id).expect("Failed to find user");
+
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().login, user.login);
+    }
+
+    #[test]
+    fn test_add_email_auth_method() {
+        let ctx = setup();
+        let dao = PgIdentityDao::new(ctx.pool.clone());
+        let user = create_test_user(&ctx.pool, "email_auth");
+        let auth = NewEmailAuthMethod {
+            user_id: user.id,
+            email: "test@example.com",
+            hashed_pass: "hashed_password",
+        };
+
+        let result = dao
+            .add_email_auth_method(auth)
+            .expect("Failed to add auth method");
+
+        assert_eq!(result.user_id, user.id);
+        assert_eq!(result.email, "test@example.com");
+    }
+
+    #[test]
+    fn test_find_by_email_pass() {
+        let ctx = setup();
+        let dao = PgIdentityDao::new(ctx.pool.clone());
+        let user = create_test_user(&ctx.pool, "find_email_pass");
+        let email = "test@example.com";
+        let pass = "hashed_password";
+        dao.add_email_auth_method(NewEmailAuthMethod {
+            user_id: user.id,
+            email,
+            hashed_pass: pass,
+        })
+        .expect("Failed to add auth method");
+
+        let found = dao
+            .find_by_email_pass(EmailPassFields {
+                email: email.to_string(),
+                hashed_pass: pass.to_string(),
+            })
+            .expect("Failed to find user");
+
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().id, user.id);
+    }
+
+    #[test]
+    fn test_rotate_refresh_token() {
+        let ctx = setup();
+        let dao = PgIdentityDao::new(ctx.pool.clone());
+        let user = create_test_user(&ctx.pool, "rotate_token");
+        let expires_at = Utc::now() + Duration::days(1);
+        let token = NewRefreshToken {
+            user_id: user.id,
+            expires_at,
+        };
+
+        let version = dao
+            .rotate_refresh_token(token)
+            .expect("Failed to rotate token");
+
+        assert!(version > 0);
+    }
+
+    #[test]
+    fn test_verify_token() {
+        let ctx = setup();
+        let dao = PgIdentityDao::new(ctx.pool.clone());
+        let user = create_test_user(&ctx.pool, "verify_token");
+        let expires_at = Utc::now() + Duration::days(1);
+        let token = NewRefreshToken {
+            user_id: user.id,
+            expires_at,
+        };
+
+        let version = dao
+            .rotate_refresh_token(token)
+            .expect("Failed to rotate token");
+        let is_valid = dao
+            .verify_token(&user.id, version)
+            .expect("Failed to verify token");
+
+        assert!(is_valid);
+    }
+
+    #[test]
+    fn test_verify_token_expired() {
+        let ctx = setup();
+        let dao = PgIdentityDao::new(ctx.pool.clone());
+        let user = create_test_user(&ctx.pool, "expired_token");
+        let expires_at = Utc::now() - Duration::days(1);
+        let token = NewRefreshToken {
+            user_id: user.id,
+            expires_at,
+        };
+
+        let version = dao
+            .rotate_refresh_token(token)
+            .expect("Failed to rotate token");
+        let is_valid = dao
+            .verify_token(&user.id, version)
+            .expect("Failed to verify token");
+
+        assert!(!is_valid);
+    }
+}
+
+#[cfg(test)]
+mod integration_test {
+    use super::*;
+    use crate::model::models::{NewEmailAuthMethod, NewRefreshToken, NewUser};
+    use crate::test_utils::{create_test_user, setup};
+    use chrono::{Duration, Utc};
+
+    #[test]
+    fn test_auth_flow() {
+        let ctx = setup();
+        let dao = PgIdentityDao::new(ctx.pool.clone());
+
+        // 1. Create user
+        let user = dao.create_user(NewUser { login: "flow_user" }).unwrap();
+
+        // 2. Add auth method
+        dao.add_email_auth_method(NewEmailAuthMethod {
+            user_id: user.id,
+            email: "flow@example.com",
+            hashed_pass: "secret",
+        })
+        .unwrap();
+
+        // 3. Login (find by email/pass)
+        let found = dao
+            .find_by_email_pass(EmailPassFields {
+                email: "flow@example.com".to_string(),
+                hashed_pass: "secret".to_string(),
+            })
+            .unwrap()
+            .expect("User should be found");
+
+        assert_eq!(found.id, user.id);
+    }
+
+    #[test]
+    fn test_token_rotation_flow() {
+        let ctx = setup();
+        let dao = PgIdentityDao::new(ctx.pool.clone());
+        let user = create_test_user(&ctx.pool, "token_flow");
+
+        // 1. First token
+        let v1 = dao
+            .rotate_refresh_token(NewRefreshToken {
+                user_id: user.id,
+                expires_at: Utc::now() + Duration::days(1),
+            })
+            .unwrap();
+
+        assert!(dao.verify_token(&user.id, v1).unwrap());
+
+        // 2. Rotate to second token
+        let v2 = dao
+            .rotate_refresh_token(NewRefreshToken {
+                user_id: user.id,
+                expires_at: Utc::now() + Duration::days(1),
+            })
+            .unwrap();
+
+        // 3. v1 should be invalid (claimed), v2 should be valid
+        assert!(!dao.verify_token(&user.id, v1).unwrap());
+        assert!(dao.verify_token(&user.id, v2).unwrap());
     }
 }
