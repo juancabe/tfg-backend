@@ -7,6 +7,7 @@ use uuid::Uuid;
 pub trait LocationDao {
     fn create_location(&self, new_location: NewLocation) -> Result<Location, DaoError>;
     fn get_location(&self, id: Uuid) -> Result<Location, DaoError>;
+    fn delete_location(&self, id: Uuid) -> Result<(), DaoError>;
 }
 
 #[derive(Clone)]
@@ -44,6 +45,15 @@ impl LocationDao for PgLocationDao {
             .find(loc_id)
             .select(Location::as_select())
             .first(conn)
+            .map_err(Into::into)
+    }
+
+    fn delete_location(&self, loc_id: Uuid) -> Result<(), DaoError> {
+        use crate::model::schema::locations::dsl::*;
+        let conn = &mut self.pool.get()?;
+        diesel::delete(locations.find(loc_id))
+            .execute(conn)
+            .map(|_| ())
             .map_err(Into::into)
     }
 }
@@ -91,6 +101,50 @@ mod unit_test {
 
         let result = dao.get_location(Uuid::new_v4());
 
+        assert!(matches!(result, Err(DaoError::NotFound)));
+    }
+
+    #[test]
+    fn test_delete_location() {
+        let ctx = setup();
+        let dao = PgLocationDao::new(ctx.pool.clone());
+        let loc = create_test_location(&ctx.pool, "delete_test");
+
+        dao.delete_location(loc.id).expect("Failed to delete location");
+
+        let result = dao.get_location(loc.id);
+        assert!(matches!(result, Err(DaoError::NotFound)));
+    }
+}
+
+#[cfg(test)]
+mod integration_test {
+    use super::*;
+    use crate::test_utils::setup;
+
+    #[test]
+    fn test_location_lifecycle_flow() {
+        let ctx = setup();
+        let dao = PgLocationDao::new(ctx.pool.clone());
+
+        // 1. Create
+        let new_loc = NewLocation {
+            name: Some("Lifecycle Location".to_string()),
+            geo_lat: Some(10.0),
+            geo_long: Some(20.0),
+        };
+        let created = dao.create_location(new_loc).unwrap();
+        let id = created.id;
+
+        // 2. Get
+        let found = dao.get_location(id).unwrap();
+        assert_eq!(found.name, Some("Lifecycle Location".to_string()));
+
+        // 3. Delete
+        dao.delete_location(id).unwrap();
+
+        // 4. Verify deleted
+        let result = dao.get_location(id);
         assert!(matches!(result, Err(DaoError::NotFound)));
     }
 }
