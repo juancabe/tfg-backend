@@ -1,6 +1,7 @@
 //! Persistence access implementation (_Data Access Object_)
 
 pub mod identity;
+pub mod producer;
 
 use diesel::prelude::*;
 use diesel::r2d2::ConnectionManager;

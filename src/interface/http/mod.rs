@@ -29,6 +29,7 @@ pub enum InterfaceError {
 }
 
 pub mod auth_controller;
+pub mod producer_controller;
 
 pub struct Interface {}
 

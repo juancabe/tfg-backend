@@ -39,7 +39,7 @@ pub fn setup() -> TestContext {
         .expect("Failed to run migrations");
 
     // Clean DB
-    diesel::sql_query("TRUNCATE TABLE users, locations, packet_templates RESTART IDENTITY CASCADE")
+    diesel::sql_query("TRUNCATE TABLE users, locations, packet_templates, groups, producers, internet_auths, mqtt_broker_auths RESTART IDENTITY CASCADE")
         .execute(&mut conn)
         .expect("Failed to truncate tables");
 
@@ -56,6 +56,64 @@ pub fn create_test_user(pool: &DbPool, suffix: &str) -> User {
             login: &format!("user_{}", suffix),
         })
         .returning(User::as_returning())
+        .get_result(&mut conn)
+        .unwrap()
+}
+
+#[allow(dead_code)]
+pub fn create_test_location(pool: &DbPool, suffix: &str) -> crate::model::models::Location {
+    use crate::model::schema::locations::dsl::*;
+    let mut conn = pool.get().unwrap();
+    diesel::insert_into(locations)
+        .values(crate::model::models::NewLocation {
+            name: Some(format!("location_{}", suffix)),
+            geo_lat: Some(0.0),
+            geo_long: Some(0.0),
+        })
+        .returning(crate::model::models::Location::as_returning())
+        .get_result(&mut conn)
+        .unwrap()
+}
+
+#[allow(dead_code)]
+pub fn create_test_group(
+    pool: &DbPool,
+    owner_id: uuid::Uuid,
+    location_id_arg: uuid::Uuid,
+    suffix: &str,
+) -> crate::model::models::Group {
+    use crate::model::schema::groups::dsl::*;
+    let mut conn = pool.get().unwrap();
+    diesel::insert_into(groups)
+        .values(crate::model::models::NewGroup {
+            owner_user_id: owner_id,
+            location_id: location_id_arg,
+            name: format!("group_{}", suffix),
+            description: "desc".to_string(),
+        })
+        .returning(crate::model::models::Group::as_returning())
+        .get_result(&mut conn)
+        .unwrap()
+}
+
+#[allow(dead_code)]
+pub fn create_test_producer(
+    pool: &DbPool,
+    group_id_in: uuid::Uuid,
+    location_id_in: uuid::Uuid,
+    suffix: &str,
+) -> crate::model::models::Producer {
+    use crate::model::schema::producers::dsl::*;
+    let mut conn = pool.get().unwrap();
+    diesel::insert_into(producers)
+        .values(crate::model::models::NewProducer {
+            location_id: location_id_in,
+            group_id: group_id_in,
+            name: format!("producer_{}", suffix),
+            description: "desc".to_string(),
+            forwarder_id: None,
+        })
+        .returning(crate::model::models::Producer::as_returning())
         .get_result(&mut conn)
         .unwrap()
 }
