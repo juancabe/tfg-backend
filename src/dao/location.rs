@@ -1,0 +1,96 @@
+use crate::dao::{DaoError, DbPool};
+use crate::model::models::{Location, NewLocation};
+use diesel::prelude::*;
+use diesel::{RunQueryDsl, SelectableHelper};
+use uuid::Uuid;
+
+pub trait LocationDao {
+    fn create_location(&self, new_location: NewLocation) -> Result<Location, DaoError>;
+    fn get_location(&self, id: Uuid) -> Result<Location, DaoError>;
+}
+
+#[derive(Clone)]
+pub struct PgLocationDao {
+    pool: DbPool,
+}
+
+impl PgLocationDao {
+    pub fn new(pool: DbPool) -> Self {
+        Self { pool }
+    }
+}
+
+impl From<DbPool> for PgLocationDao {
+    fn from(pool: DbPool) -> Self {
+        Self::new(pool)
+    }
+}
+
+impl LocationDao for PgLocationDao {
+    fn create_location(&self, new_loc: NewLocation) -> Result<Location, DaoError> {
+        use crate::model::schema::locations::dsl::*;
+        let conn = &mut self.pool.get()?;
+        diesel::insert_into(locations)
+            .values(&new_loc)
+            .returning(Location::as_returning())
+            .get_result(conn)
+            .map_err(Into::into)
+    }
+
+    fn get_location(&self, loc_id: Uuid) -> Result<Location, DaoError> {
+        use crate::model::schema::locations::dsl::*;
+        let conn = &mut self.pool.get()?;
+        locations
+            .find(loc_id)
+            .select(Location::as_select())
+            .first(conn)
+            .map_err(Into::into)
+    }
+}
+
+#[cfg(test)]
+mod unit_test {
+    use super::*;
+    use crate::test_utils::{create_test_location, setup};
+
+    #[test]
+    fn test_create_location() {
+        let ctx = setup();
+        let dao = PgLocationDao::new(ctx.pool.clone());
+        let new_loc = NewLocation {
+            name: Some("Test Location".to_string()),
+            geo_lat: Some(40.4168),
+            geo_long: Some(-3.7038),
+        };
+
+        let result = dao
+            .create_location(new_loc)
+            .expect("Failed to create location");
+
+        assert_eq!(result.name, Some("Test Location".to_string()));
+        assert_eq!(result.geo_lat, Some(40.4168));
+        assert_eq!(result.geo_long, Some(-3.7038));
+    }
+
+    #[test]
+    fn test_get_location() {
+        let ctx = setup();
+        let dao = PgLocationDao::new(ctx.pool.clone());
+        let loc = create_test_location(&ctx.pool, "get_test");
+
+        let found = dao.get_location(loc.id).expect("Failed to get location");
+
+        assert_eq!(found.id, loc.id);
+        assert_eq!(found.name, loc.name);
+    }
+
+    #[test]
+    fn test_get_location_not_found() {
+        let ctx = setup();
+        let dao = PgLocationDao::new(ctx.pool.clone());
+
+        let result = dao.get_location(Uuid::new_v4());
+
+        assert!(matches!(result, Err(DaoError::NotFound)));
+    }
+}
