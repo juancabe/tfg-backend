@@ -8,7 +8,7 @@ use crate::{
     service::auth::{AuthService, RefreshSessionOut, TokenPair},
 };
 
-use super::ApiError;
+use super::HttpApiError;
 
 use axum::{
     Json,
@@ -101,7 +101,7 @@ impl AuthController {
     pub async fn post_refresh(
         State(AppState { pool }): State<AppState>,
         payload: Result<Json<RefreshPayload>, JsonRejection>,
-    ) -> Result<Json<RefreshSessionResponse>, ApiError> {
+    ) -> Result<Json<RefreshSessionResponse>, HttpApiError> {
         let payload_refresh = &payload?.refresh_token;
         let dao = PgIdentityDao::new(pool);
         let service = AuthService::new(dao);
@@ -115,7 +115,7 @@ impl AuthController {
     pub async fn post_register(
         State(AppState { pool }): State<AppState>,
         payload: Result<Json<RegisterPayload>, JsonRejection>,
-    ) -> Result<Json<RegisterResponse>, ApiError> {
+    ) -> Result<Json<RegisterResponse>, HttpApiError> {
         let payload = payload?.0;
         let dao = PgIdentityDao::new(pool);
         let service = AuthService::new(dao);
@@ -129,7 +129,7 @@ impl AuthController {
     pub async fn post_login(
         State(AppState { pool }): State<AppState>,
         payload: Result<Json<LoginPayload>, JsonRejection>,
-    ) -> Result<LoginResponse, ApiError> {
+    ) -> Result<LoginResponse, HttpApiError> {
         let payload = payload?.0;
         let dao = PgIdentityDao::new(pool);
         let service = AuthService::new(dao);

@@ -19,7 +19,7 @@ use crate::{
 };
 
 #[derive(Debug, Error)]
-pub enum InterfaceError {
+pub enum HttpError {
     #[error("Initialization error occured")]
     InitError(String),
     #[error("Tokio IO error")]
@@ -31,10 +31,10 @@ pub enum InterfaceError {
 pub mod auth_controller;
 pub mod producer_controller;
 
-pub struct Interface {}
+pub struct Http {}
 
-impl Interface {
-    pub async fn run_http_server(addr: SocketAddr) -> Result<(), InterfaceError> {
+impl Http {
+    pub async fn run_http_server(addr: SocketAddr) -> Result<(), HttpError> {
         let listener = tokio::net::TcpListener::bind(addr).await?;
         dotenv().ok();
         let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
@@ -54,7 +54,7 @@ impl Interface {
 }
 
 #[derive(Debug, Error)]
-pub enum ApiError {
+pub enum HttpApiError {
     #[error("JSON payload rejected")]
     JsonRejection(#[from] JsonRejection),
     #[error("Service error: {0}")]
@@ -74,15 +74,15 @@ impl From<String> for ErrorResponse {
     }
 }
 
-impl IntoResponse for ApiError {
+impl IntoResponse for HttpApiError {
     fn into_response(self) -> axum::response::Response {
         let (status, message, err) = match &self {
-            ApiError::JsonRejection(json_rejection) => (
+            HttpApiError::JsonRejection(json_rejection) => (
                 json_rejection.status(),
                 json_rejection.body_text(),
                 Some(self),
             ),
-            ApiError::ServiceError(service_err) => {
+            HttpApiError::ServiceError(service_err) => {
                 let status = match service_err {
                     ServiceError::Forbidden => StatusCode::FORBIDDEN,
                     ServiceError::ForbiddenJWT(_error) => StatusCode::FORBIDDEN,
@@ -104,6 +104,7 @@ impl IntoResponse for ApiError {
                             StatusCode::INTERNAL_SERVER_ERROR
                         }
                     },
+                    ServiceError::TypeError(_) => StatusCode::BAD_REQUEST,
                 };
                 (status, service_err.to_string(), Some(self))
             }

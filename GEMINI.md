@@ -19,7 +19,7 @@ For every method tested, you must include at least one failure case (e.g., handl
 
 Methods you must write tests for are marked with a TODO indicating the test kind required (if you notice something on the tagged file looks finished and should also be tested, you should stop (don't start writing code) and ask the user if they want that to be tested too).
 
-You must run `cargo test` to run the tests, also, run the linter to fix lint errors (`cargo clippy`)
+You must run `cargo test` to run the tests, also, run the linter to fix lint errors (`cargo clippy`), you shouldn't "fix" (modify) any file you didn't work with.
 
 Test kinds may be the following:
 

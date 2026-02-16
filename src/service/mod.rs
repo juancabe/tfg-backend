@@ -3,7 +3,7 @@ pub mod producer;
 
 use thiserror::Error;
 
-use crate::dao::DaoError;
+use crate::{dao::DaoError, interface};
 
 #[derive(Error, Debug)]
 pub enum ServiceError {
@@ -15,4 +15,6 @@ pub enum ServiceError {
     NotFound,
     #[error("Database error: {0}")]
     DbError(#[from] DaoError),
+    #[error("Type error: {0}")]
+    TypeError(#[from] interface::types::TypeError),
 }

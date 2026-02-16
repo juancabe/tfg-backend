@@ -12,6 +12,7 @@ pub enum ProducerAuthCredentials {
 }
 
 pub trait ProducerDao {
+    // TODO: Document these
     fn create_producer(&self, new_producer: NewProducer) -> Result<Producer, DaoError>;
     fn get_by_id(&self, id: Uuid) -> Result<Option<Producer>, DaoError>;
     fn get_by_group_id(&self, id: Uuid) -> Result<Vec<Producer>, DaoError>;
@@ -410,3 +411,4 @@ mod unit_test {
         assert!(found.is_none());
     }
 }
+

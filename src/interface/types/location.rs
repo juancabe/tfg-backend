@@ -1,0 +1,32 @@
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
+use crate::{interface::types::TypeError, model::models};
+
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("Only provided one component of geo location")]
+    InvalidPartialLocation,
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+pub struct NewLocation {
+    name: Option<String>,
+    geo_lat: Option<f64>,
+    geo_long: Option<f64>,
+}
+
+impl TryFrom<NewLocation> for models::NewLocation {
+    type Error = TypeError;
+
+    fn try_from(value: NewLocation) -> Result<Self, Self::Error> {
+        match (value.geo_lat, value.geo_long) {
+            (None, None) | (Some(_), Some(_)) => Ok(Self {
+                name: value.name,
+                geo_lat: value.geo_lat,
+                geo_long: value.geo_long,
+            }),
+            _ => Err(Error::InvalidPartialLocation)?,
+        }
+    }
+}

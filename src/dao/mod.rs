@@ -1,5 +1,6 @@
 //! Persistence access implementation (_Data Access Object_)
 
+pub mod group;
 pub mod identity;
 pub mod location;
 pub mod producer;

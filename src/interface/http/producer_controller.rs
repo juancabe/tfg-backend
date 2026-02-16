@@ -6,14 +6,16 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    helpers::http_app_state::AppState, interface::http::ApiError, model::models, service::auth::JWT,
+    helpers::http_app_state::AppState,
+    interface::{
+        http::HttpApiError,
+        types::producer::{NewProducer, Producer},
+    },
+    model::models,
+    service::auth::JWT,
 };
 
 pub struct ProducerController {}
-
-// TODO: Don't wrap it, complete new type
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Producer(models::Producer);
 
 // TODO: Don't wrap it, complete new type
 #[derive(Serialize, Deserialize, Debug)]
@@ -42,10 +44,6 @@ impl From<Producer> for GetProducerResponse {
     }
 }
 
-// TODO: Create type
-#[derive(Deserialize, Serialize, Debug)]
-pub struct NewProducer {}
-
 #[derive(Deserialize, Serialize, Debug)]
 pub struct PostProducerBody {
     producer: NewProducer,
@@ -60,7 +58,7 @@ impl ProducerController {
     pub fn get_producers(
         jwt: JWT,
         State(AppState { pool: _ }): State<AppState>,
-    ) -> Result<Json<GetProducersResponse>, ApiError> {
+    ) -> Result<Json<GetProducersResponse>, HttpApiError> {
         let _user_id = jwt.user_id;
         todo!()
         // let p_service: ProducerService<PgProducerDao, PgGroupDao, PgLocationDao> = pool.into();
@@ -72,7 +70,7 @@ impl ProducerController {
         jwt: JWT,
         State(AppState { pool: _ }): State<AppState>,
         Path(id): Path<Uuid>,
-    ) -> Result<Json<GetProducerResponse>, ApiError> {
+    ) -> Result<Json<GetProducerResponse>, HttpApiError> {
         let _user_id = jwt.user_id;
         let _producer_id = id;
         todo!()
@@ -85,7 +83,7 @@ impl ProducerController {
         _jwt: JWT,
         State(AppState { pool: _ }): State<AppState>,
         Json(body): Json<PostProducerBody>,
-    ) -> Result<Json<PostProducerResponse>, ApiError> {
+    ) -> Result<Json<PostProducerResponse>, HttpApiError> {
         let _new_producer = body.producer;
         todo!()
         // let p_service: ProducerService<PgProducerDao, PgGroupDao, PgLocationDao> = pool.into();
