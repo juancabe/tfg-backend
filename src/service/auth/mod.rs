@@ -40,7 +40,6 @@ pub struct TokenPair {
     pub refresh_token: String,
 }
 
-// TODO: Integration test
 pub struct AuthService<D: IdentityDao> {
     _dao: D,
 }
@@ -63,7 +62,6 @@ impl<D: IdentityDao> AuthService<D> {
     ///
     /// # TODO
     /// TODO: Right now, for [`EmailPass`] _auth_ it doesn't check wether the email is veified
-    /// TODO: Test (both)
     pub fn authenticate_user(&self, input: LoginInput) -> Result<Option<TokenPair>, ServiceError> {
         match input.auth_method {
             AuthMethod::EmailPass(email_pass) => {
@@ -128,8 +126,6 @@ impl<D: IdentityDao> AuthService<D> {
     /// # Use
     /// This is intended for use in an auth middleware.
     /// TODO: this may use a "Redis" db
-    ///
-    /// TODO: Test (both)
     pub fn validate_session(&self, session_token: &str) -> Result<JWT, ServiceError> {
         let decoded = JWT::decode(session_token, JWT::get_dec_key())?.claims;
 
@@ -159,7 +155,6 @@ impl<D: IdentityDao> AuthService<D> {
     /// # Use
     /// Intended for use by a dedicated endpoint
     ///
-    /// TODO: Test (both)
     pub fn refresh_session(&self, refresh_token: &str) -> Result<RefreshSessionOut, ServiceError> {
         let decoded = JWT::decode(refresh_token, JWT::get_dec_key())?.claims;
 
@@ -219,7 +214,6 @@ impl<D: IdentityDao> AuthService<D> {
     /// # Use
     /// Intended for use by a register endpoint
     ///
-    /// TODO: Test (both)
     pub fn register_user(&self, input: RegisterInput) -> Result<RegisterResponse, ServiceError> {
         // The user insert operation needs to be atomic on the service level, if auth method
         // creation fails user needs to be deleted from DB
@@ -470,9 +464,11 @@ mod tests {
             let service = AuthService::new(dao);
 
             let login_input = LoginInput {
-                auth_method: AuthMethod::EmailPass(EmailPass::Confirmation(EmailPassConfirmation {
-                    email: "test@example.com".to_string(),
-                })),
+                auth_method: AuthMethod::EmailPass(EmailPass::Confirmation(
+                    EmailPassConfirmation {
+                        email: "test@example.com".to_string(),
+                    },
+                )),
             };
 
             let result = service.authenticate_user(login_input);

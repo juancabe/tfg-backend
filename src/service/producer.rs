@@ -9,7 +9,6 @@ use crate::model::models::{self};
 use crate::service::ServiceError;
 use uuid::Uuid;
 
-// TODO: Integration test
 pub struct ProducerService<P: ProducerDao, L: LocationDao, G: GroupDao> {
     producer_dao: P,
     location_dao: L,

@@ -59,7 +59,6 @@ impl From<Producer> for PostProducerResponse {
 }
 
 // TODO: Docs
-/// TODO: Integration test
 impl ProducerController {
     pub fn get_producers(
         jwt: JWT,
@@ -152,7 +151,8 @@ mod tests {
             let jwt = mock_jwt(user.id, user.login);
             let state = State(AppState { pool: ctx.pool });
 
-            let res = ProducerController::get_producer_by_id(jwt, state, Path(producer.id)).unwrap();
+            let res =
+                ProducerController::get_producer_by_id(jwt, state, Path(producer.id)).unwrap();
             assert_eq!(res.0.producer.id, producer.id);
         }
 

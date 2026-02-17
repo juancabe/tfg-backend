@@ -51,7 +51,6 @@ impl PgProducerDao {
     }
 }
 
-// TODO: Integration test
 impl ProducerDao for PgProducerDao {
     fn create_producer(&self, new_producer: NewProducer) -> Result<Producer, DaoError> {
         use crate::model::schema::producers::dsl::*;
@@ -417,6 +416,62 @@ mod tests {
     }
 
     mod integration_test {
-        // No integration tests for PgProducerDao at the moment.
+        use super::*;
+
+        #[test]
+        fn test_producer_lifecycle_flow() {
+            let ctx = setup();
+            let dao = PgProducerDao::new(ctx.pool.clone());
+
+            // 1. Setup environment
+            let user = create_test_user(&ctx.pool, "lifecycle");
+            let location = create_test_location(&ctx.pool, "lifecycle");
+            let group1 = create_test_group(&ctx.pool, user.id, location.id, "lifecycle1");
+            let group2 = create_test_group(&ctx.pool, user.id, location.id, "lifecycle2");
+
+            // 2. Create producer
+            let producer = dao
+                .create_producer(NewProducer {
+                    location_id: location.id,
+                    group_id: group1.id,
+                    name: "lifecycle_prod".to_string(),
+                    description: "desc".to_string(),
+                    forwarder_id: None,
+                })
+                .expect("Create failed");
+
+            // 3. Update group
+            dao.update_group(producer.id, group2.id).expect("Update group failed");
+
+            // 4. Set auth
+            let key = "base64key".to_string();
+            dao.set_internet_auth(producer.id, key.clone()).expect("Set auth failed");
+
+            // 5. Verify credentials and state
+            let creds = dao.get_auth_credentials(producer.id).expect("Get creds failed");
+            match creds {
+                ProducerAuthCredentials::Internet(auth) => {
+                    assert_eq!(auth.x25519_pub_key_bytes_base64, key);
+                }
+                _ => panic!("Expected Internet auth"),
+            }
+
+            let updated = dao.get_by_id(producer.id).expect("Get producer failed").unwrap();
+            assert_eq!(updated.group_id, group2.id);
+
+            // 6. Delete
+            dao.delete(producer.id).expect("Delete failed");
+            let found = dao.get_by_id(producer.id).expect("Final check failed");
+            assert!(found.is_none());
+        }
+
+        #[test]
+        fn test_get_auth_credentials_not_found() {
+            let ctx = setup();
+            let dao = PgProducerDao::new(ctx.pool.clone());
+
+            let result = dao.get_auth_credentials(Uuid::new_v4());
+            assert!(matches!(result, Err(DaoError::NotFound)));
+        }
     }
 }
