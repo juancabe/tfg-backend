@@ -9,17 +9,15 @@ use crate::{
     helpers::http_app_state::AppState,
     interface::{
         http::HttpApiError,
-        types::producer::{NewProducer, Producer},
+        types::{
+            group::Group,
+            producer::{NewProducer, Producer},
+        },
     },
-    model::models,
     service::auth::JWT,
 };
 
 pub struct ProducerController {}
-
-// TODO: Don't wrap it, complete new type
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Group(models::Group);
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct GetProducersResponse {

@@ -11,9 +11,9 @@ pub enum Error {
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct NewLocation {
-    name: Option<String>,
-    geo_lat: Option<f64>,
-    geo_long: Option<f64>,
+    pub name: Option<String>,
+    pub geo_lat: Option<f64>,
+    pub geo_long: Option<f64>,
 }
 
 impl TryFrom<NewLocation> for models::NewLocation {

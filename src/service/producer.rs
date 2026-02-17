@@ -1,48 +1,62 @@
 use crate::dao::DbPool;
+use crate::dao::group::GroupDao;
 use crate::dao::location::LocationDao;
 use crate::dao::producer::{ProducerAuthCredentials, ProducerDao};
 use crate::interface;
-use crate::model::models::{self, Group, Producer};
+use crate::interface::types::group::Group;
+use crate::interface::types::producer::Producer;
+use crate::model::models::{self};
 use crate::service::ServiceError;
 use uuid::Uuid;
 
-pub struct ProducerService<P: ProducerDao, L: LocationDao> {
-    _producer_dao: P,
-    _location_dao: L,
+// TODO: Integration test
+pub struct ProducerService<P: ProducerDao, L: LocationDao, G: GroupDao> {
+    producer_dao: P,
+    location_dao: L,
+    group_dao: G,
 }
 
-// P and G must implement From<DbPool>
-impl<P, L> From<DbPool> for ProducerService<P, L>
+impl<P, L, G> From<DbPool> for ProducerService<P, L, G>
 where
     P: ProducerDao + Clone + From<DbPool>,
     L: LocationDao + Clone + From<DbPool>,
+    G: GroupDao + Clone + From<DbPool>,
 {
     fn from(value: DbPool) -> Self {
         // We create P and G generically
         let p_dao = P::from(value.clone());
-        let l_dao = L::from(value);
+        let l_dao = L::from(value.clone());
+        let g_dao = G::from(value);
 
-        Self::new(p_dao, l_dao)
+        Self::new(p_dao, l_dao, g_dao)
     }
 }
 
-impl<P: ProducerDao + Clone, L: LocationDao + Clone> ProducerService<P, L> {
-    pub fn new(producer_dao: P, location_dao: L) -> Self {
+impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> ProducerService<P, L, G> {
+    // TODO: Unit test
+    pub fn new(producer_dao: P, location_dao: L, group_dao: G) -> Self {
         Self {
-            _producer_dao: producer_dao,
-            _location_dao: location_dao,
+            producer_dao,
+            location_dao,
+            group_dao,
         }
     }
 
+    // TODO: Unit test
     pub fn create_producer(
         &self,
         user_id: Uuid,
         new_producer: interface::types::producer::NewProducer,
     ) -> Result<Producer, ServiceError> {
-        // Check if the user is owner of new_producer.group_id
+        {
+            let group = self.group_dao.get_group(new_producer.group_id)?;
+            if group.owner_user_id != user_id {
+                return Err(ServiceError::Forbidden);
+            }
+        }
 
         let loc = self
-            ._location_dao
+            .location_dao
             .create_location(new_producer.location.try_into()?)?;
 
         let model_new_producer = models::NewProducer {
@@ -53,85 +67,69 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone> ProducerService<P, L> {
             forwarder_id: new_producer.forwarder_id,
         };
 
-        self._producer_dao
+        self.producer_dao
             .create_producer(model_new_producer)
             .map_err(Into::into)
+            .map(|p| p.into())
     }
 
-    /// Only returns the producer when the user has visibility permissions via any of the groups
+    /// Only returns the producer when the user has visibility permissions
+    // TODO: Unit test
     pub fn get_producer(&self, user_id: Uuid, producer_id: Uuid) -> Result<Producer, ServiceError> {
-        todo!();
-        // self._access_service.require_access(user_id, producer_id)?;
-        // self._producer_dao
-        //     .get_by_id(producer_id)?
-        //     .ok_or(ServiceError::NotFound)
+        let producer = self
+            .producer_dao
+            .get_by_id(producer_id)?
+            .ok_or(ServiceError::NotFound)?;
+
+        let group = self.group_dao.get_group(producer.group_id)?;
+
+        if group.owner_user_id != user_id && !group.is_public {
+            Err(ServiceError::Forbidden)
+        } else {
+            Ok(producer.into())
+        }
     }
 
-    pub fn get_visible_producers(
+    // TODO: Unit test
+    pub fn get_owned_producers(
         &self,
         user_id: Uuid,
-    ) -> Result<Vec<(Producer, Vec<Group>)>, ServiceError> {
-        todo!()
-        // let producers = self._access_service.list_accessible_producers(user_id)?;
-        // let mut results = Vec::new();
-        //
-        // for p in producers {
-        //     let groups = self._group_dao.get_producer_groups(p.id, p.main_group_id)?;
-        //     results.push((p, groups));
-        // }
-        //
-        // Ok(results)
+    ) -> Result<Vec<(Group, Vec<Producer>)>, ServiceError> {
+        self.group_dao
+            .get_user_groups(user_id)?
+            .into_iter()
+            .map(|g| {
+                let producers = self
+                    .producer_dao
+                    .get_by_group_id(g.id)
+                    .map(|v| v.into_iter().map(Producer::from).collect())
+                    .map_err(ServiceError::from)?;
+                Ok((Group::from(g), producers))
+            })
+            .collect()
     }
 
-    pub fn delete_producer(
-        &self,
-        user_id: Uuid,
-        producer_id: Uuid,
-    ) -> Result<Producer, ServiceError> {
-        todo!()
-        // let level = self._access_service.require_access(user_id, producer_id)?;
-        // if level < AccessLevel::Admin {
-        //     return Err(ServiceError::Forbidden);
-        // }
-        //
-        // let producer = self
-        //     ._producer_dao
-        //     .get_by_id(producer_id)?
-        //     .ok_or(ServiceError::NotFound)?;
-        //
-        // self._producer_dao.delete(producer_id)?;
-        // Ok(producer)
+    // TODO: Unit test
+    pub fn delete_producer(&self, user_id: Uuid, producer_id: Uuid) -> Result<(), ServiceError> {
+        let producer = self
+            .producer_dao
+            .get_by_id(producer_id)?
+            .ok_or(ServiceError::NotFound)?;
+        let group = self.group_dao.get_group(producer.group_id)?;
+        if user_id != group.owner_user_id {
+            Err(ServiceError::Forbidden)?;
+        }
+
+        self.producer_dao.delete(producer_id)?;
+        Ok(())
     }
 
-    pub fn share_with_group(
-        &self,
-        user_id: Uuid,
-        producer_id: Uuid,
-        group_id: Uuid,
-    ) -> Result<(), ServiceError> {
-        todo!()
-        // let level = self._access_service.require_access(user_id, producer_id)?;
-        // if level < AccessLevel::Write {
-        //     return Err(ServiceError::Forbidden);
-        // }
-        // self._group_access_service
-        //     .require_owner(user_id, group_id)?;
-        //
-        // self._producer_dao
-        //     .share_with_group(producer_id, group_id)
-        //     .map_err(Into::into)
-    }
-
+    // TODO: Unit test (it should assert it panics)
     pub fn rotate_credentials(
         &self,
-        user_id: Uuid,
-        producer_id: Uuid,
+        _user_id: Uuid,
+        _producer_id: Uuid,
     ) -> Result<ProducerAuthCredentials, ServiceError> {
-        // let level = self._access_service.require_access(user_id, producer_id)?;
-        // if level < AccessLevel::Write {
-        //     return Err(ServiceError::Forbidden);
-        // }
         todo!("Implement credential rotation in DAO")
     }
 }
-

@@ -47,10 +47,7 @@ To be effective, unit tests should adhere to the F.I.R.S.T. principles:
 
 ### Isolation (Mocking & Stubbing)
 
-Because unit tests must be fast and independent, they use Test Doubles to replace external dependencies:
-
-- Mocks: Objects pre-programmed with expectations which form a specification of the calls they are expected to receive.
-- Stubs: Provide canned answers to calls made during the test, usually not responding to anything outside what's programmed for the test.
+We'll use the `TestContext` in @src/test_utils.rs for this purpose
 
 ### Structure (AAA Pattern)
 
