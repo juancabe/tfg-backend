@@ -18,6 +18,8 @@ use crate::{
     service::ServiceError,
 };
 
+pub const DEFAULT_PORT: u16 = 7777;
+
 #[derive(Debug, Error)]
 pub enum HttpError {
     #[error("Initialization error occured")]
@@ -36,18 +38,21 @@ pub struct Http {}
 impl Http {
     pub async fn run_http_server(addr: SocketAddr) -> Result<(), HttpError> {
         let listener = tokio::net::TcpListener::bind(addr).await?;
+        log::info!("Created TcpListener on {:?}", addr);
         dotenv().ok();
         let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-        let manager = ConnectionManager::<PgConnection>::new(database_url);
+        let manager = ConnectionManager::<PgConnection>::new(database_url.clone());
         let pool: DbPool = r2d2::Pool::builder()
             .max_size(MAX_DB_POOL_SIZE)
             .build(manager)?;
+        log::info!("Created DbPool on {}", database_url);
 
         let state = AppState { pool };
 
         let app = Router::new()
             // AuthController
             .with_state(state);
+        log::info!("Created HTTP Router");
 
         axum::serve(listener, app).await.map_err(Into::into)
     }

@@ -68,6 +68,7 @@
             setup-postgres
             export DATABASE_URL="postgres://postgres@localhost/postgres?host=$PGHOST"
             trap "'${pgPackage}/bin/pg_ctl' stop -D '$PGDATA' -m fast" EXIT
+            export RUST_LOG=debug
             echo "Environment ready."
           '';
         };
