@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
+    dao::{group::PgGroupDao, location::PgLocationDao, producer::PgProducerDao},
     helpers::http_app_state::AppState,
     interface::{
         http::HttpApiError,
@@ -14,20 +15,19 @@ use crate::{
             producer::{NewProducer, Producer},
         },
     },
-    service::auth::JWT,
+    service::{auth::JWT, producer::ProducerService},
 };
 
 pub struct ProducerController {}
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct GetProducersResponse {
-    producers: Vec<(Producer, Vec<Uuid>)>,
-    groups: Vec<Group>,
+    pairs: Vec<(Group, Vec<Producer>)>,
 }
 
-impl From<Vec<(Producer, Vec<Group>)>> for GetProducersResponse {
-    fn from(_pairs: Vec<(Producer, Vec<Group>)>) -> Self {
-        todo!()
+impl From<Vec<(Group, Vec<Producer>)>> for GetProducersResponse {
+    fn from(pairs: Vec<(Group, Vec<Producer>)>) -> Self {
+        Self { pairs }
     }
 }
 
@@ -37,8 +37,8 @@ pub struct GetProducerResponse {
 }
 
 impl From<Producer> for GetProducerResponse {
-    fn from(_value: Producer) -> Self {
-        todo!()
+    fn from(value: Producer) -> Self {
+        Self { producer: value }
     }
 }
 
@@ -52,40 +52,43 @@ pub struct PostProducerResponse {
     producer: Producer,
 }
 
+impl From<Producer> for PostProducerResponse {
+    fn from(value: Producer) -> Self {
+        Self { producer: value }
+    }
+}
+
+// TODO: Docs
 impl ProducerController {
     pub fn get_producers(
         jwt: JWT,
-        State(AppState { pool: _ }): State<AppState>,
+        State(AppState { pool }): State<AppState>,
     ) -> Result<Json<GetProducersResponse>, HttpApiError> {
-        let _user_id = jwt.user_id;
-        todo!()
-        // let p_service: ProducerService<PgProducerDao, PgGroupDao, PgLocationDao> = pool.into();
-        // let producers = p_service.get_visible_producers(user_id)?;
-        // Ok(Json(GetProducersResponse::from(producers)))
+        let p_service: ProducerService<PgProducerDao, PgLocationDao, PgGroupDao> = pool.into();
+        let producers = p_service.get_owned_producers(jwt.user_id)?;
+        Ok(Json(GetProducersResponse::from(producers)))
     }
 
     pub fn get_producer_by_id(
         jwt: JWT,
-        State(AppState { pool: _ }): State<AppState>,
+        State(AppState { pool }): State<AppState>,
         Path(id): Path<Uuid>,
     ) -> Result<Json<GetProducerResponse>, HttpApiError> {
-        let _user_id = jwt.user_id;
-        let _producer_id = id;
-        todo!()
-        // let p_service: ProducerService<PgProducerDao, PgGroupDao, PgLocationDao> = pool.into();
-        // let producer = p_service.get_producer(user_id, producer_id)?;
-        // Ok(Json(GetProducerResponse::from(producer)))
+        let user_id = jwt.user_id;
+        let producer_id = id;
+        let p_service: ProducerService<PgProducerDao, PgLocationDao, PgGroupDao> = pool.into();
+        let producer = p_service.get_producer(user_id, producer_id)?;
+        Ok(Json(GetProducerResponse::from(producer)))
     }
 
     pub fn post_producer(
-        _jwt: JWT,
-        State(AppState { pool: _ }): State<AppState>,
+        jwt: JWT,
+        State(AppState { pool }): State<AppState>,
         Json(body): Json<PostProducerBody>,
     ) -> Result<Json<PostProducerResponse>, HttpApiError> {
-        let _new_producer = body.producer;
-        todo!()
-        // let p_service: ProducerService<PgProducerDao, PgGroupDao, PgLocationDao> = pool.into();
-        // let res = p_service.create_producer(jwt.user_id, new_producer)?;
-        // Ok(Json(res.into()))
+        let new_producer = body.producer;
+        let p_service: ProducerService<PgProducerDao, PgLocationDao, PgGroupDao> = pool.into();
+        let res = p_service.create_producer(jwt.user_id, new_producer)?;
+        Ok(Json(res.into()))
     }
 }
