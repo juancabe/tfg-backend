@@ -59,6 +59,7 @@ impl From<Producer> for PostProducerResponse {
 }
 
 // TODO: Docs
+/// TODO: Integration test
 impl ProducerController {
     pub fn get_producers(
         jwt: JWT,
@@ -90,5 +91,137 @@ impl ProducerController {
         let p_service: ProducerService<PgProducerDao, PgLocationDao, PgGroupDao> = pool.into();
         let res = p_service.create_producer(jwt.user_id, new_producer)?;
         Ok(Json(res.into()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::interface::types::location::NewLocation;
+    use crate::service::auth::JWTKind;
+    use crate::test_utils::{
+        create_test_group, create_test_location, create_test_producer, create_test_user, setup,
+    };
+    use axum::extract::{Path, State};
+
+    mod unit_tests {
+        // No unit tests for ProducerController at the moment.
+        // Unit tests would typically mock dependencies like ProducerService, PgProducerDao, etc.
+    }
+
+    mod integration_test {
+        use super::*;
+
+        fn mock_jwt(user_id: Uuid, login: String) -> JWT {
+            let (iat, exp): (chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>) =
+                JWTKind::Session.get_iat_exp();
+            JWT::new(
+                1,
+                login,
+                user_id,
+                JWTKind::Session,
+                iat.timestamp(),
+                exp.timestamp(),
+            )
+        }
+
+        #[test]
+        fn test_get_producers_success() {
+            let ctx = setup();
+            let user = create_test_user(&ctx.pool, "owner");
+            let location = create_test_location(&ctx.pool, "loc");
+            let group = create_test_group(&ctx.pool, user.id, location.id, "group");
+            create_test_producer(&ctx.pool, group.id, location.id, "prod");
+
+            let jwt = mock_jwt(user.id, user.login);
+            let state = State(AppState { pool: ctx.pool });
+
+            let res = ProducerController::get_producers(jwt, state).unwrap();
+            assert_eq!(res.0.pairs.len(), 1);
+            assert_eq!(res.0.pairs[0].1.len(), 1);
+        }
+
+        #[test]
+        fn test_get_producer_by_id_success() {
+            let ctx = setup();
+            let user = create_test_user(&ctx.pool, "owner");
+            let location = create_test_location(&ctx.pool, "loc");
+            let group = create_test_group(&ctx.pool, user.id, location.id, "group");
+            let producer = create_test_producer(&ctx.pool, group.id, location.id, "prod");
+
+            let jwt = mock_jwt(user.id, user.login);
+            let state = State(AppState { pool: ctx.pool });
+
+            let res = ProducerController::get_producer_by_id(jwt, state, Path(producer.id)).unwrap();
+            assert_eq!(res.0.producer.id, producer.id);
+        }
+
+        #[test]
+        fn test_get_producer_by_id_not_found() {
+            let ctx = setup();
+            let user = create_test_user(&ctx.pool, "owner");
+            let jwt = mock_jwt(user.id, user.login);
+            let state = State(AppState { pool: ctx.pool });
+
+            let res = ProducerController::get_producer_by_id(jwt, state, Path(Uuid::new_v4()));
+            assert!(res.is_err());
+        }
+
+        #[test]
+        fn test_post_producer_success() {
+            let ctx = setup();
+            let user = create_test_user(&ctx.pool, "owner");
+            let location = create_test_location(&ctx.pool, "loc");
+            let group = create_test_group(&ctx.pool, user.id, location.id, "group");
+
+            let jwt = mock_jwt(user.id, user.login);
+            let state = State(AppState { pool: ctx.pool });
+
+            let body = Json(PostProducerBody {
+                producer: NewProducer {
+                    location: NewLocation {
+                        name: Some("Prod Loc".to_string()),
+                        geo_lat: Some(1.0),
+                        geo_long: Some(2.0),
+                    },
+                    group_id: group.id,
+                    name: "New Prod".to_string(),
+                    description: "Desc".to_string(),
+                    forwarder_id: None,
+                },
+            });
+
+            let res = ProducerController::post_producer(jwt, state, body).unwrap();
+            assert_eq!(res.0.producer.name, "New Prod");
+        }
+
+        #[test]
+        fn test_post_producer_forbidden() {
+            let ctx = setup();
+            let owner = create_test_user(&ctx.pool, "owner");
+            let other = create_test_user(&ctx.pool, "other");
+            let location = create_test_location(&ctx.pool, "loc");
+            let group = create_test_group(&ctx.pool, owner.id, location.id, "group");
+
+            let jwt = mock_jwt(other.id, other.login);
+            let state = State(AppState { pool: ctx.pool });
+
+            let body = Json(PostProducerBody {
+                producer: NewProducer {
+                    location: NewLocation {
+                        name: Some("Prod Loc".to_string()),
+                        geo_lat: None,
+                        geo_long: None,
+                    },
+                    group_id: group.id,
+                    name: "New Prod".to_string(),
+                    description: "Desc".to_string(),
+                    forwarder_id: None,
+                },
+            });
+
+            let res = ProducerController::post_producer(jwt, state, body);
+            assert!(res.is_err());
+        }
     }
 }

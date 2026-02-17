@@ -33,7 +33,6 @@ where
 }
 
 impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> ProducerService<P, L, G> {
-    // TODO: Unit test
     pub fn new(producer_dao: P, location_dao: L, group_dao: G) -> Self {
         Self {
             producer_dao,
@@ -42,7 +41,6 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> Produc
         }
     }
 
-    // TODO: Unit test
     pub fn create_producer(
         &self,
         user_id: Uuid,
@@ -74,7 +72,6 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> Produc
     }
 
     /// Only returns the producer when the user has visibility permissions
-    // TODO: Unit test
     pub fn get_producer(&self, user_id: Uuid, producer_id: Uuid) -> Result<Producer, ServiceError> {
         let producer = self
             .producer_dao
@@ -90,7 +87,6 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> Produc
         }
     }
 
-    // TODO: Unit test
     pub fn get_owned_producers(
         &self,
         user_id: Uuid,
@@ -109,7 +105,6 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> Produc
             .collect()
     }
 
-    // TODO: Unit test
     pub fn delete_producer(&self, user_id: Uuid, producer_id: Uuid) -> Result<(), ServiceError> {
         let producer = self
             .producer_dao
@@ -124,7 +119,6 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> Produc
         Ok(())
     }
 
-    // TODO: Unit test (it should assert it panics)
     pub fn rotate_credentials(
         &self,
         _user_id: Uuid,
@@ -143,12 +137,15 @@ mod unit_tests {
     use crate::interface::types::location::NewLocation;
     use crate::interface::types::producer::NewProducer;
     use crate::test_utils::{
-        create_test_group, create_test_location, create_test_producer, create_test_user, setup,
-        TestContext,
+        TestContext, create_test_group, create_test_location, create_test_producer,
+        create_test_user, setup,
     };
     use diesel::prelude::*;
 
-    fn setup_service() -> (TestContext, ProducerService<PgProducerDao, PgLocationDao, PgGroupDao>) {
+    fn setup_service() -> (
+        TestContext,
+        ProducerService<PgProducerDao, PgLocationDao, PgGroupDao>,
+    ) {
         let ctx = setup();
         let service = ProducerService::from(ctx.pool.clone());
         (ctx, service)

@@ -140,3 +140,310 @@ impl AuthController {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::helpers::users_auth::{EmailPass, EmailPassFields};
+    use crate::test_utils::setup;
+    use axum::extract::State;
+
+    mod unit_tests {
+        // No unit tests for AuthController at the moment.
+        // Unit tests would typically mock dependencies like AuthService and PgIdentityDao.
+    }
+
+    mod integration_test {
+        use super::*;
+
+        #[tokio::test]
+        async fn test_post_register_success() {
+            let ctx = setup();
+            let state = State(AppState { pool: ctx.pool });
+            let payload = Ok(Json(RegisterPayload {
+                login: "test_user".to_string(),
+                auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                    email: "test@example.com".to_string(),
+                    hashed_pass: "password".to_string(),
+                })),
+            }));
+
+            let res = AuthController::post_register(state, payload).await.unwrap();
+            assert!(matches!(res.0, RegisterResponse::Success));
+        }
+
+        #[tokio::test]
+        async fn test_post_register_duplicate() {
+            let ctx = setup();
+            let state = State(AppState {
+                pool: ctx.pool.clone(),
+            });
+            let payload = RegisterPayload {
+                login: "test_user".to_string(),
+                auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                    email: "test@example.com".to_string(),
+                    hashed_pass: "password".to_string(),
+                })),
+            };
+
+            let _ = AuthController::post_register(state.clone(), Ok(Json(payload)))
+                .await
+                .unwrap();
+
+            // Try again with same login
+            let payload_dup = Ok(Json(RegisterPayload {
+                login: "test_user".to_string(),
+                auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                    email: "test2@example.com".to_string(),
+                    hashed_pass: "password".to_string(),
+                })),
+            }));
+
+            let res = AuthController::post_register(state, payload_dup).await;
+            assert!(res.is_err());
+        }
+
+        #[tokio::test]
+        async fn test_post_login_success() {
+            let ctx = setup();
+            let state = State(AppState {
+                pool: ctx.pool.clone(),
+            });
+
+            // Register first
+            let register_payload = RegisterPayload {
+                login: "test_user".to_string(),
+                auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                    email: "test@example.com".to_string(),
+                    hashed_pass: "password".to_string(),
+                })),
+            };
+            let _ = AuthController::post_register(state.clone(), Ok(Json(register_payload)))
+                .await
+                .unwrap();
+
+            // Login
+            let login_payload = Ok(Json(LoginPayload {
+                auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                    email: "test@example.com".to_string(),
+                    hashed_pass: "password".to_string(),
+                })),
+            }));
+
+            let res = AuthController::post_login(state, login_payload)
+                .await
+                .unwrap();
+            assert!(matches!(res, LoginResponse::Correct(_)));
+        }
+
+        #[tokio::test]
+        async fn test_post_login_invalid_credentials() {
+            let ctx = setup();
+            let state = State(AppState { pool: ctx.pool });
+
+            let login_payload = Ok(Json(LoginPayload {
+                auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                    email: "nonexistent@example.com".to_string(),
+                    hashed_pass: "wrong".to_string(),
+                })),
+            }));
+
+            let res = AuthController::post_login(state, login_payload)
+                .await
+                .unwrap();
+            assert!(matches!(res, LoginResponse::InvalidCredentials));
+        }
+
+        #[tokio::test]
+        async fn test_post_login_wrong_password_for_existing_user() {
+            let ctx = setup();
+            let state = State(AppState {
+                pool: ctx.pool.clone(),
+            });
+
+            // Register
+            let email = "test@example.com".to_string();
+            let register_payload = RegisterPayload {
+                login: "test_user".to_string(),
+                auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                    email: email.clone(),
+                    hashed_pass: "password".to_string(),
+                })),
+            };
+            let _ = AuthController::post_register(state.clone(), Ok(Json(register_payload)))
+                .await
+                .unwrap();
+
+            // Login with wrong password
+            let login_payload = Ok(Json(LoginPayload {
+                auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                    email,
+                    hashed_pass: "wrong_password".to_string(),
+                })),
+            }));
+
+            let res = AuthController::post_login(state, login_payload)
+                .await
+                .unwrap();
+            assert!(matches!(res, LoginResponse::InvalidCredentials));
+        }
+
+        #[tokio::test]
+        async fn test_post_refresh_success() {
+            let ctx = setup();
+            let state = State(AppState {
+                pool: ctx.pool.clone(),
+            });
+
+            // Register and login to get refresh token
+            let register_payload = RegisterPayload {
+                login: "test_user".to_string(),
+                auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                    email: "test@example.com".to_string(),
+                    hashed_pass: "password".to_string(),
+                })),
+            };
+            let _ = AuthController::post_register(state.clone(), Ok(Json(register_payload)))
+                .await
+                .unwrap();
+
+            let login_payload = LoginPayload {
+                auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                    email: "test@example.com".to_string(),
+                    hashed_pass: "password".to_string(),
+                })),
+            };
+            let login_res = AuthController::post_login(state.clone(), Ok(Json(login_payload)))
+                .await
+                .unwrap();
+
+            let refresh_token = if let LoginResponse::Correct(tokens) = login_res {
+                tokens.refresh_token
+            } else {
+                panic!("Login failed");
+            };
+
+            // Refresh
+            let refresh_payload = Ok(Json(RefreshPayload { refresh_token }));
+            let res = AuthController::post_refresh(state, refresh_payload)
+                .await
+                .unwrap();
+
+            assert!(!res.0.session_token.is_empty());
+            assert!(!res.0.refresh_token.is_empty());
+        }
+
+        #[tokio::test]
+        async fn test_post_refresh_invalid_token() {
+            let ctx = setup();
+            let state = State(AppState { pool: ctx.pool });
+
+            let refresh_payload = Ok(Json(RefreshPayload {
+                refresh_token: "invalid_token".to_string(),
+            }));
+
+            let res = AuthController::post_refresh(state, refresh_payload).await;
+            assert!(res.is_err());
+        }
+
+        #[tokio::test]
+        async fn test_post_refresh_with_session_token() {
+            let ctx = setup();
+            let state = State(AppState {
+                pool: ctx.pool.clone(),
+            });
+
+            // Register and login to get tokens
+            let email = "test@example.com".to_string();
+            let register_payload = RegisterPayload {
+                login: "test_user".to_string(),
+                auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                    email: email.clone(),
+                    hashed_pass: "password".to_string(),
+                })),
+            };
+            let _ = AuthController::post_register(state.clone(), Ok(Json(register_payload)))
+                .await
+                .unwrap();
+
+            let login_payload = LoginPayload {
+                auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                    email,
+                    hashed_pass: "password".to_string(),
+                })),
+            };
+            let login_res = AuthController::post_login(state.clone(), Ok(Json(login_payload)))
+                .await
+                .unwrap();
+
+            let session_token = if let LoginResponse::Correct(tokens) = login_res {
+                tokens.session_token
+            } else {
+                panic!("Login failed");
+            };
+
+            // Try to refresh with session token instead of refresh token
+            let refresh_payload = Ok(Json(RefreshPayload {
+                refresh_token: session_token,
+            }));
+            let res = AuthController::post_refresh(state, refresh_payload).await;
+
+            assert!(res.is_err());
+        }
+
+        #[tokio::test]
+        async fn test_post_refresh_twice_fails() {
+            let ctx = setup();
+            let state = State(AppState {
+                pool: ctx.pool.clone(),
+            });
+
+            // Register and login to get refresh token
+            let email = "test@example.com".to_string();
+            let register_payload = RegisterPayload {
+                login: "test_user".to_string(),
+                auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                    email: email.clone(),
+                    hashed_pass: "password".to_string(),
+                })),
+            };
+            let _ = AuthController::post_register(state.clone(), Ok(Json(register_payload)))
+                .await
+                .unwrap();
+
+            let login_payload = LoginPayload {
+                auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                    email,
+                    hashed_pass: "password".to_string(),
+                })),
+            };
+            let login_res = AuthController::post_login(state.clone(), Ok(Json(login_payload)))
+                .await
+                .unwrap();
+
+            let refresh_token = if let LoginResponse::Correct(tokens) = login_res {
+                tokens.refresh_token
+            } else {
+                panic!("Login failed");
+            };
+
+            // First refresh
+            let res1 = AuthController::post_refresh(
+                state.clone(),
+                Ok(Json(RefreshPayload {
+                    refresh_token: refresh_token.clone(),
+                })),
+            )
+            .await;
+            assert!(res1.is_ok());
+
+            // Second refresh with SAME token should fail
+            let res2 = AuthController::post_refresh(
+                state,
+                Ok(Json(RefreshPayload { refresh_token })),
+            )
+            .await;
+            assert!(res2.is_err());
+        }
+    }
+}

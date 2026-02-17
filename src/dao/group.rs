@@ -118,7 +118,7 @@ impl GroupDao for PgGroupDao {
 }
 
 #[cfg(test)]
-mod unit_tests {
+mod unit_test {
     use super::*;
     use crate::test_utils::{create_test_group, create_test_location, create_test_user, setup};
 

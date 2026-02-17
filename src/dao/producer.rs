@@ -51,6 +51,7 @@ impl PgProducerDao {
     }
 }
 
+// TODO: Integration test
 impl ProducerDao for PgProducerDao {
     fn create_producer(&self, new_producer: NewProducer) -> Result<Producer, DaoError> {
         use crate::model::schema::producers::dsl::*;

@@ -1,11 +1,10 @@
 mod jwt;
-pub use jwt::JWT;
+pub use jwt::{JWT, JWTKind};
 
 use crate::helpers::users_auth::{AuthMethod, EmailPass};
 use crate::interface::http::auth_controller::{LoginPayload, RegisterPayload, RegisterResponse};
 use crate::model::models::{NewEmailAuthMethod, NewUser};
 use crate::service::ServiceError;
-use crate::service::auth::jwt::JWTKind;
 use crate::{dao::identity::IdentityDao, model::models::NewRefreshToken};
 use serde::{Deserialize, Serialize};
 
