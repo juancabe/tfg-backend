@@ -141,6 +141,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "backend"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "chrono",
+ "diesel",
+ "diesel_migrations",
+ "dotenvy",
+ "env_logger",
+ "jsonwebtoken",
+ "lazy_static",
+ "log",
+ "r2d2",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "base16ct"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1600,27 +1621,6 @@ name = "sync_wrapper"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0bf256ce5efdfa370213c1dabab5935a12e49f2c58d15e9eac2870d3b4f27263"
-
-[[package]]
-name = "tfg-backend"
-version = "0.1.0"
-dependencies = [
- "axum",
- "chrono",
- "diesel",
- "diesel_migrations",
- "dotenvy",
- "env_logger",
- "jsonwebtoken",
- "lazy_static",
- "log",
- "r2d2",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "uuid",
-]
 
 [[package]]
 name = "thiserror"
