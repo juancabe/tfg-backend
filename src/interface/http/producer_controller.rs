@@ -104,7 +104,7 @@ mod tests {
     };
     use axum::extract::{Path, State};
 
-    mod unit_tests {
+    mod unit_test {
         // No unit tests for ProducerController at the moment.
         // Unit tests would typically mock dependencies like ProducerService, PgProducerDao, etc.
     }

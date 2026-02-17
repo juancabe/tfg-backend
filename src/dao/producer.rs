@@ -206,7 +206,7 @@ impl ProducerDao for PgProducerDao {
 }
 
 #[cfg(test)]
-mod unit_test {
+mod tests {
     use super::*;
     use crate::model::models::NewProducer;
     use crate::test_utils::{
@@ -214,201 +214,209 @@ mod unit_test {
     };
     use uuid::Uuid;
 
-    #[test]
-    fn test_create_producer() {
-        let ctx = setup();
-        let dao = PgProducerDao::new(ctx.pool.clone());
-        let user = create_test_user(&ctx.pool, "prod_creator");
-        let location = create_test_location(&ctx.pool, "prod_loc");
-        let group = create_test_group(&ctx.pool, user.id, location.id, "prod_group");
+    mod unit_test {
+        use super::*;
 
-        let new_producer = NewProducer {
-            location_id: location.id,
-            group_id: group.id,
-            name: "test_producer".to_string(),
-            description: "A test producer".to_string(),
-            forwarder_id: None,
-        };
+        #[test]
+        fn test_create_producer() {
+            let ctx = setup();
+            let dao = PgProducerDao::new(ctx.pool.clone());
+            let user = create_test_user(&ctx.pool, "prod_creator");
+            let location = create_test_location(&ctx.pool, "prod_loc");
+            let group = create_test_group(&ctx.pool, user.id, location.id, "prod_group");
 
-        let result = dao
-            .create_producer(new_producer)
-            .expect("Failed to create producer");
+            let new_producer = NewProducer {
+                location_id: location.id,
+                group_id: group.id,
+                name: "test_producer".to_string(),
+                description: "A test producer".to_string(),
+                forwarder_id: None,
+            };
 
-        assert_eq!(result.name, "test_producer");
-        assert_eq!(result.group_id, group.id);
-    }
+            let result = dao
+                .create_producer(new_producer)
+                .expect("Failed to create producer");
 
-    #[test]
-    fn test_create_producer_invalid_group() {
-        let ctx = setup();
-        let dao = PgProducerDao::new(ctx.pool.clone());
-        let location = create_test_location(&ctx.pool, "prod_loc_inv");
+            assert_eq!(result.name, "test_producer");
+            assert_eq!(result.group_id, group.id);
+        }
 
-        let new_producer = NewProducer {
-            location_id: location.id,
-            group_id: Uuid::new_v4(), // Invalid group ID
-            name: "test_producer_invalid".to_string(),
-            description: "Invalid group".to_string(),
-            forwarder_id: None,
-        };
+        #[test]
+        fn test_create_producer_invalid_group() {
+            let ctx = setup();
+            let dao = PgProducerDao::new(ctx.pool.clone());
+            let location = create_test_location(&ctx.pool, "prod_loc_inv");
 
-        let result = dao.create_producer(new_producer);
-        assert!(matches!(result, Err(DaoError::ForeignKeyViolation(_))));
-    }
+            let new_producer = NewProducer {
+                location_id: location.id,
+                group_id: Uuid::new_v4(), // Invalid group ID
+                name: "test_producer_invalid".to_string(),
+                description: "Invalid group".to_string(),
+                forwarder_id: None,
+            };
 
-    #[test]
-    fn test_get_by_id() {
-        let ctx = setup();
-        let dao = PgProducerDao::new(ctx.pool.clone());
-        let user = create_test_user(&ctx.pool, "get_id_user");
-        let location = create_test_location(&ctx.pool, "get_id_loc");
-        let group = create_test_group(&ctx.pool, user.id, location.id, "get_id_group");
-        let producer = create_test_producer(&ctx.pool, group.id, location.id, "get_id_prod");
+            let result = dao.create_producer(new_producer);
+            assert!(matches!(result, Err(DaoError::ForeignKeyViolation(_))));
+        }
 
-        let found = dao.get_by_id(producer.id).expect("Failed to get producer");
-        assert!(found.is_some());
-        assert_eq!(found.unwrap().id, producer.id);
-    }
+        #[test]
+        fn test_get_by_id() {
+            let ctx = setup();
+            let dao = PgProducerDao::new(ctx.pool.clone());
+            let user = create_test_user(&ctx.pool, "get_id_user");
+            let location = create_test_location(&ctx.pool, "get_id_loc");
+            let group = create_test_group(&ctx.pool, user.id, location.id, "get_id_group");
+            let producer = create_test_producer(&ctx.pool, group.id, location.id, "get_id_prod");
 
-    #[test]
-    fn test_get_by_id_not_found() {
-        let ctx = setup();
-        let dao = PgProducerDao::new(ctx.pool.clone());
-        let found = dao
-            .get_by_id(Uuid::new_v4())
-            .expect("Failed to get producer");
-        assert!(found.is_none());
-    }
+            let found = dao.get_by_id(producer.id).expect("Failed to get producer");
+            assert!(found.is_some());
+            assert_eq!(found.unwrap().id, producer.id);
+        }
 
-    #[test]
-    fn test_get_by_group_id() {
-        let ctx = setup();
-        let dao = PgProducerDao::new(ctx.pool.clone());
-        let user = create_test_user(&ctx.pool, "get_grp_user");
-        let location = create_test_location(&ctx.pool, "get_grp_loc");
-        let group = create_test_group(&ctx.pool, user.id, location.id, "get_grp_group");
-        let p1 = create_test_producer(&ctx.pool, group.id, location.id, "p1");
-        let p2 = create_test_producer(&ctx.pool, group.id, location.id, "p2");
+        #[test]
+        fn test_get_by_id_not_found() {
+            let ctx = setup();
+            let dao = PgProducerDao::new(ctx.pool.clone());
+            let found = dao
+                .get_by_id(Uuid::new_v4())
+                .expect("Failed to get producer");
+            assert!(found.is_none());
+        }
 
-        let producers = dao
-            .get_by_group_id(group.id)
-            .expect("Failed to get producers");
-        assert_eq!(producers.len(), 2);
-        assert!(producers.iter().any(|p| p.id == p1.id));
-        assert!(producers.iter().any(|p| p.id == p2.id));
-    }
+        #[test]
+        fn test_get_by_group_id() {
+            let ctx = setup();
+            let dao = PgProducerDao::new(ctx.pool.clone());
+            let user = create_test_user(&ctx.pool, "get_grp_user");
+            let location = create_test_location(&ctx.pool, "get_grp_loc");
+            let group = create_test_group(&ctx.pool, user.id, location.id, "get_grp_group");
+            let p1 = create_test_producer(&ctx.pool, group.id, location.id, "p1");
+            let p2 = create_test_producer(&ctx.pool, group.id, location.id, "p2");
 
-    #[test]
-    fn test_update_last_seen() {
-        let ctx = setup();
-        let dao = PgProducerDao::new(ctx.pool.clone());
-        let user = create_test_user(&ctx.pool, "last_seen_user");
-        let location = create_test_location(&ctx.pool, "last_seen_loc");
-        let group = create_test_group(&ctx.pool, user.id, location.id, "last_seen_grp");
-        let producer = create_test_producer(&ctx.pool, group.id, location.id, "last_seen_prod");
+            let producers = dao
+                .get_by_group_id(group.id)
+                .expect("Failed to get producers");
+            assert_eq!(producers.len(), 2);
+            assert!(producers.iter().any(|p| p.id == p1.id));
+            assert!(producers.iter().any(|p| p.id == p2.id));
+        }
 
-        let old_last_seen = producer.last_seen;
+        #[test]
+        fn test_update_last_seen() {
+            let ctx = setup();
+            let dao = PgProducerDao::new(ctx.pool.clone());
+            let user = create_test_user(&ctx.pool, "last_seen_user");
+            let location = create_test_location(&ctx.pool, "last_seen_loc");
+            let group = create_test_group(&ctx.pool, user.id, location.id, "last_seen_grp");
+            let producer = create_test_producer(&ctx.pool, group.id, location.id, "last_seen_prod");
 
-        // Ensure some time passes or just rely on clock
-        // For robustness in tests where execution is fast, we might want to check for inequality primarily
-        // but since resolution is microsecond, it should be fine.
+            let old_last_seen = producer.last_seen;
 
-        dao.update_last_seen(producer.id)
-            .expect("Failed to update last seen");
+            // Ensure some time passes or just rely on clock
+            // For robustness in tests where execution is fast, we might want to check for inequality primarily
+            // but since resolution is microsecond, it should be fine.
 
-        let updated = dao.get_by_id(producer.id).unwrap().unwrap();
-        // Just check it changed.
-        assert_ne!(updated.last_seen, old_last_seen);
-    }
+            dao.update_last_seen(producer.id)
+                .expect("Failed to update last seen");
 
-    #[test]
-    fn test_update_group() {
-        let ctx = setup();
-        let dao = PgProducerDao::new(ctx.pool.clone());
-        let user = create_test_user(&ctx.pool, "upd_grp_user");
-        let location = create_test_location(&ctx.pool, "upd_grp_loc");
-        let group1 = create_test_group(&ctx.pool, user.id, location.id, "grp1");
-        let group2 = create_test_group(&ctx.pool, user.id, location.id, "grp2");
-        let producer = create_test_producer(&ctx.pool, group1.id, location.id, "upd_grp_prod");
+            let updated = dao.get_by_id(producer.id).unwrap().unwrap();
+            // Just check it changed.
+            assert_ne!(updated.last_seen, old_last_seen);
+        }
 
-        dao.update_group(producer.id, group2.id)
-            .expect("Failed to update group");
+        #[test]
+        fn test_update_group() {
+            let ctx = setup();
+            let dao = PgProducerDao::new(ctx.pool.clone());
+            let user = create_test_user(&ctx.pool, "upd_grp_user");
+            let location = create_test_location(&ctx.pool, "upd_grp_loc");
+            let group1 = create_test_group(&ctx.pool, user.id, location.id, "grp1");
+            let group2 = create_test_group(&ctx.pool, user.id, location.id, "grp2");
+            let producer = create_test_producer(&ctx.pool, group1.id, location.id, "upd_grp_prod");
 
-        let updated = dao.get_by_id(producer.id).unwrap().unwrap();
-        assert_eq!(updated.group_id, group2.id);
-    }
+            dao.update_group(producer.id, group2.id)
+                .expect("Failed to update group");
 
-    #[test]
-    fn test_set_forwarder() {
-        let ctx = setup();
-        let dao = PgProducerDao::new(ctx.pool.clone());
-        let user = create_test_user(&ctx.pool, "fwd_user");
-        let location = create_test_location(&ctx.pool, "fwd_loc");
-        let group = create_test_group(&ctx.pool, user.id, location.id, "fwd_grp");
-        let producer = create_test_producer(&ctx.pool, group.id, location.id, "prod");
-        let forwarder = create_test_producer(&ctx.pool, group.id, location.id, "fwd");
+            let updated = dao.get_by_id(producer.id).unwrap().unwrap();
+            assert_eq!(updated.group_id, group2.id);
+        }
 
-        dao.set_forwarder(producer.id, forwarder.id)
-            .expect("Failed to set forwarder");
+        #[test]
+        fn test_set_forwarder() {
+            let ctx = setup();
+            let dao = PgProducerDao::new(ctx.pool.clone());
+            let user = create_test_user(&ctx.pool, "fwd_user");
+            let location = create_test_location(&ctx.pool, "fwd_loc");
+            let group = create_test_group(&ctx.pool, user.id, location.id, "fwd_grp");
+            let producer = create_test_producer(&ctx.pool, group.id, location.id, "prod");
+            let forwarder = create_test_producer(&ctx.pool, group.id, location.id, "fwd");
 
-        let updated = dao.get_by_id(producer.id).unwrap().unwrap();
-        assert_eq!(updated.forwarder_id, Some(forwarder.id));
-    }
+            dao.set_forwarder(producer.id, forwarder.id)
+                .expect("Failed to set forwarder");
 
-    #[test]
-    fn test_set_internet_auth() {
-        let ctx = setup();
-        let dao = PgProducerDao::new(ctx.pool.clone());
-        let user = create_test_user(&ctx.pool, "auth_user");
-        let location = create_test_location(&ctx.pool, "auth_loc");
-        let group = create_test_group(&ctx.pool, user.id, location.id, "auth_grp");
-        let producer = create_test_producer(&ctx.pool, group.id, location.id, "auth_prod");
-        let key = "some_base64_key".to_string();
+            let updated = dao.get_by_id(producer.id).unwrap().unwrap();
+            assert_eq!(updated.forwarder_id, Some(forwarder.id));
+        }
 
-        dao.set_internet_auth(producer.id, key.clone())
-            .expect("Failed to set auth");
+        #[test]
+        fn test_set_internet_auth() {
+            let ctx = setup();
+            let dao = PgProducerDao::new(ctx.pool.clone());
+            let user = create_test_user(&ctx.pool, "auth_user");
+            let location = create_test_location(&ctx.pool, "auth_loc");
+            let group = create_test_group(&ctx.pool, user.id, location.id, "auth_grp");
+            let producer = create_test_producer(&ctx.pool, group.id, location.id, "auth_prod");
+            let key = "some_base64_key".to_string();
 
-        let creds = dao
-            .get_auth_credentials(producer.id)
-            .expect("Failed to get creds");
-        match creds {
-            ProducerAuthCredentials::Internet(auth) => {
-                assert_eq!(auth.x25519_pub_key_bytes_base64, key);
+            dao.set_internet_auth(producer.id, key.clone())
+                .expect("Failed to set auth");
+
+            let creds = dao
+                .get_auth_credentials(producer.id)
+                .expect("Failed to get creds");
+            match creds {
+                ProducerAuthCredentials::Internet(auth) => {
+                    assert_eq!(auth.x25519_pub_key_bytes_base64, key);
+                }
+                _ => panic!("Expected Internet auth"),
             }
-            _ => panic!("Expected Internet auth"),
+        }
+
+        #[test]
+        fn test_get_auth_credentials_none() {
+            let ctx = setup();
+            let dao = PgProducerDao::new(ctx.pool.clone());
+            let user = create_test_user(&ctx.pool, "no_auth_user");
+            let location = create_test_location(&ctx.pool, "no_auth_loc");
+            let group = create_test_group(&ctx.pool, user.id, location.id, "no_auth_grp");
+            let producer = create_test_producer(&ctx.pool, group.id, location.id, "no_auth_prod");
+
+            let creds = dao
+                .get_auth_credentials(producer.id)
+                .expect("Failed to get creds");
+            match creds {
+                ProducerAuthCredentials::None => {}
+                _ => panic!("Expected None auth"),
+            }
+        }
+
+        #[test]
+        fn test_delete() {
+            let ctx = setup();
+            let dao = PgProducerDao::new(ctx.pool.clone());
+            let user = create_test_user(&ctx.pool, "del_user");
+            let location = create_test_location(&ctx.pool, "del_loc");
+            let group = create_test_group(&ctx.pool, user.id, location.id, "del_grp");
+            let producer = create_test_producer(&ctx.pool, group.id, location.id, "del_prod");
+
+            dao.delete(producer.id).expect("Failed to delete producer");
+
+            let found = dao.get_by_id(producer.id).expect("Failed to check");
+            assert!(found.is_none());
         }
     }
 
-    #[test]
-    fn test_get_auth_credentials_none() {
-        let ctx = setup();
-        let dao = PgProducerDao::new(ctx.pool.clone());
-        let user = create_test_user(&ctx.pool, "no_auth_user");
-        let location = create_test_location(&ctx.pool, "no_auth_loc");
-        let group = create_test_group(&ctx.pool, user.id, location.id, "no_auth_grp");
-        let producer = create_test_producer(&ctx.pool, group.id, location.id, "no_auth_prod");
-
-        let creds = dao
-            .get_auth_credentials(producer.id)
-            .expect("Failed to get creds");
-        match creds {
-            ProducerAuthCredentials::None => {}
-            _ => panic!("Expected None auth"),
-        }
-    }
-
-    #[test]
-    fn test_delete() {
-        let ctx = setup();
-        let dao = PgProducerDao::new(ctx.pool.clone());
-        let user = create_test_user(&ctx.pool, "del_user");
-        let location = create_test_location(&ctx.pool, "del_loc");
-        let group = create_test_group(&ctx.pool, user.id, location.id, "del_grp");
-        let producer = create_test_producer(&ctx.pool, group.id, location.id, "del_prod");
-
-        dao.delete(producer.id).expect("Failed to delete producer");
-
-        let found = dao.get_by_id(producer.id).expect("Failed to check");
-        assert!(found.is_none());
+    mod integration_test {
+        // No integration tests for PgProducerDao at the moment.
     }
 }

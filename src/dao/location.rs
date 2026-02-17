@@ -59,92 +59,94 @@ impl LocationDao for PgLocationDao {
 }
 
 #[cfg(test)]
-mod unit_test {
+mod tests {
     use super::*;
     use crate::test_utils::{create_test_location, setup};
 
-    #[test]
-    fn test_create_location() {
-        let ctx = setup();
-        let dao = PgLocationDao::new(ctx.pool.clone());
-        let new_loc = NewLocation {
-            name: Some("Test Location".to_string()),
-            geo_lat: Some(40.4168),
-            geo_long: Some(-3.7038),
-        };
+    mod unit_test {
+        use super::*;
 
-        let result = dao
-            .create_location(new_loc)
-            .expect("Failed to create location");
+        #[test]
+        fn test_create_location() {
+            let ctx = setup();
+            let dao = PgLocationDao::new(ctx.pool.clone());
+            let new_loc = NewLocation {
+                name: Some("Test Location".to_string()),
+                geo_lat: Some(40.4168),
+                geo_long: Some(-3.7038),
+            };
 
-        assert_eq!(result.name, Some("Test Location".to_string()));
-        assert_eq!(result.geo_lat, Some(40.4168));
-        assert_eq!(result.geo_long, Some(-3.7038));
+            let result = dao
+                .create_location(new_loc)
+                .expect("Failed to create location");
+
+            assert_eq!(result.name, Some("Test Location".to_string()));
+            assert_eq!(result.geo_lat, Some(40.4168));
+            assert_eq!(result.geo_long, Some(-3.7038));
+        }
+
+        #[test]
+        fn test_get_location() {
+            let ctx = setup();
+            let dao = PgLocationDao::new(ctx.pool.clone());
+            let loc = create_test_location(&ctx.pool, "get_test");
+
+            let found = dao.get_location(loc.id).expect("Failed to get location");
+
+            assert_eq!(found.id, loc.id);
+            assert_eq!(found.name, loc.name);
+        }
+
+        #[test]
+        fn test_get_location_not_found() {
+            let ctx = setup();
+            let dao = PgLocationDao::new(ctx.pool.clone());
+
+            let result = dao.get_location(Uuid::new_v4());
+
+            assert!(matches!(result, Err(DaoError::NotFound)));
+        }
+
+        #[test]
+        fn test_delete_location() {
+            let ctx = setup();
+            let dao = PgLocationDao::new(ctx.pool.clone());
+            let loc = create_test_location(&ctx.pool, "delete_test");
+
+            dao.delete_location(loc.id).expect("Failed to delete location");
+
+            let result = dao.get_location(loc.id);
+            assert!(matches!(result, Err(DaoError::NotFound)));
+        }
     }
 
-    #[test]
-    fn test_get_location() {
-        let ctx = setup();
-        let dao = PgLocationDao::new(ctx.pool.clone());
-        let loc = create_test_location(&ctx.pool, "get_test");
+    mod integration_test {
+        use super::*;
 
-        let found = dao.get_location(loc.id).expect("Failed to get location");
+        #[test]
+        fn test_location_lifecycle_flow() {
+            let ctx = setup();
+            let dao = PgLocationDao::new(ctx.pool.clone());
 
-        assert_eq!(found.id, loc.id);
-        assert_eq!(found.name, loc.name);
-    }
+            // 1. Create
+            let new_loc = NewLocation {
+                name: Some("Lifecycle Location".to_string()),
+                geo_lat: Some(10.0),
+                geo_long: Some(20.0),
+            };
+            let created = dao.create_location(new_loc).unwrap();
+            let id = created.id;
 
-    #[test]
-    fn test_get_location_not_found() {
-        let ctx = setup();
-        let dao = PgLocationDao::new(ctx.pool.clone());
+            // 2. Get
+            let found = dao.get_location(id).unwrap();
+            assert_eq!(found.name, Some("Lifecycle Location".to_string()));
 
-        let result = dao.get_location(Uuid::new_v4());
+            // 3. Delete
+            dao.delete_location(id).unwrap();
 
-        assert!(matches!(result, Err(DaoError::NotFound)));
-    }
-
-    #[test]
-    fn test_delete_location() {
-        let ctx = setup();
-        let dao = PgLocationDao::new(ctx.pool.clone());
-        let loc = create_test_location(&ctx.pool, "delete_test");
-
-        dao.delete_location(loc.id).expect("Failed to delete location");
-
-        let result = dao.get_location(loc.id);
-        assert!(matches!(result, Err(DaoError::NotFound)));
-    }
-}
-
-#[cfg(test)]
-mod integration_test {
-    use super::*;
-    use crate::test_utils::setup;
-
-    #[test]
-    fn test_location_lifecycle_flow() {
-        let ctx = setup();
-        let dao = PgLocationDao::new(ctx.pool.clone());
-
-        // 1. Create
-        let new_loc = NewLocation {
-            name: Some("Lifecycle Location".to_string()),
-            geo_lat: Some(10.0),
-            geo_long: Some(20.0),
-        };
-        let created = dao.create_location(new_loc).unwrap();
-        let id = created.id;
-
-        // 2. Get
-        let found = dao.get_location(id).unwrap();
-        assert_eq!(found.name, Some("Lifecycle Location".to_string()));
-
-        // 3. Delete
-        dao.delete_location(id).unwrap();
-
-        // 4. Verify deleted
-        let result = dao.get_location(id);
-        assert!(matches!(result, Err(DaoError::NotFound)));
+            // 4. Verify deleted
+            let result = dao.get_location(id);
+            assert!(matches!(result, Err(DaoError::NotFound)));
+        }
     }
 }

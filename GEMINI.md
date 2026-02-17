@@ -21,6 +21,10 @@ Methods you must write tests for are marked with a TODO indicating the test kind
 
 You must run `cargo test` to run the tests, also, run the linter to fix lint errors (`cargo clippy`), you shouldn't "fix" (modify) any file you didn't work with.
 
+You must, once the tests are implemented, remove the TODOs that marked them.
+
+You must use a module structure for the tests like this: tests(unit_test, integration_test)
+
 Test kinds may be the following:
 
 ## Unit test

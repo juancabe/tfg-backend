@@ -118,235 +118,237 @@ impl GroupDao for PgGroupDao {
 }
 
 #[cfg(test)]
-mod unit_test {
+mod tests {
     use super::*;
     use crate::test_utils::{create_test_group, create_test_location, create_test_user, setup};
 
-    #[test]
-    fn test_create_group() {
-        let ctx = setup();
-        let dao = PgGroupDao::new(ctx.pool.clone());
-        let user = create_test_user(&ctx.pool, "create_group");
-        let location = create_test_location(&ctx.pool, "create_group");
+    mod unit_test {
+        use super::*;
 
-        let new_group = NewGroup {
-            owner_user_id: user.id,
-            location_id: location.id,
-            name: "Test Group".to_string(),
-            description: "Test Description".to_string(),
-        };
+        #[test]
+        fn test_create_group() {
+            let ctx = setup();
+            let dao = PgGroupDao::new(ctx.pool.clone());
+            let user = create_test_user(&ctx.pool, "create_group");
+            let location = create_test_location(&ctx.pool, "create_group");
 
-        let result = dao.create_group(new_group).expect("Failed to create group");
-
-        assert_eq!(result.name, "Test Group");
-        assert_eq!(result.owner_user_id, user.id);
-    }
-
-    #[test]
-    fn test_create_group_invalid_owner() {
-        let ctx = setup();
-        let dao = PgGroupDao::new(ctx.pool.clone());
-        let location = create_test_location(&ctx.pool, "invalid_owner");
-
-        let new_group = NewGroup {
-            owner_user_id: Uuid::new_v4(), // Non-existent user
-            location_id: location.id,
-            name: "Test Group".to_string(),
-            description: "Test Description".to_string(),
-        };
-
-        let result = dao.create_group(new_group);
-
-        assert!(matches!(result, Err(DaoError::ForeignKeyViolation(_))));
-    }
-
-    #[test]
-    fn test_update_group() {
-        let ctx = setup();
-        let dao = PgGroupDao::new(ctx.pool.clone());
-        let user = create_test_user(&ctx.pool, "update_group");
-        let location = create_test_location(&ctx.pool, "update_group");
-        let group = create_test_group(&ctx.pool, user.id, location.id, "update_group");
-
-        let update = GroupUpdate {
-            name: Some("Updated Name".to_string()),
-            description: Some("Updated Description".to_string()),
-            location_id: None,
-            is_public: true,
-        };
-
-        let result = dao
-            .update_group(group.id, update)
-            .expect("Failed to update group");
-
-        assert_eq!(result.name, "Updated Name");
-        assert_eq!(result.description, "Updated Description");
-        assert!(result.is_public);
-    }
-
-    #[test]
-    fn test_update_group_not_found() {
-        let ctx = setup();
-        let dao = PgGroupDao::new(ctx.pool.clone());
-
-        let update = GroupUpdate {
-            name: Some("Updated Name".to_string()),
-            description: None,
-            location_id: None,
-            is_public: false,
-        };
-
-        let result = dao.update_group(Uuid::new_v4(), update);
-
-        assert!(matches!(result, Err(DaoError::NotFound)));
-    }
-
-    #[test]
-    fn test_get_group() {
-        let ctx = setup();
-        let dao = PgGroupDao::new(ctx.pool.clone());
-        let user = create_test_user(&ctx.pool, "get_group");
-        let location = create_test_location(&ctx.pool, "get_group");
-        let group = create_test_group(&ctx.pool, user.id, location.id, "get_group");
-
-        let result = dao.get_group(group.id).expect("Failed to get group");
-
-        assert_eq!(result.id, group.id);
-        assert_eq!(result.name, group.name);
-    }
-
-    #[test]
-    fn test_get_group_not_found() {
-        let ctx = setup();
-        let dao = PgGroupDao::new(ctx.pool.clone());
-
-        let result = dao.get_group(Uuid::new_v4());
-
-        assert!(matches!(result, Err(DaoError::NotFound)));
-    }
-
-    #[test]
-    fn test_get_user_groups() {
-        let ctx = setup();
-        let dao = PgGroupDao::new(ctx.pool.clone());
-        let user = create_test_user(&ctx.pool, "user_groups");
-        let location = create_test_location(&ctx.pool, "user_groups");
-        create_test_group(&ctx.pool, user.id, location.id, "1");
-        create_test_group(&ctx.pool, user.id, location.id, "2");
-
-        let result = dao
-            .get_user_groups(user.id)
-            .expect("Failed to get user groups");
-
-        assert_eq!(result.len(), 2);
-    }
-
-    #[test]
-    fn test_get_user_groups_empty() {
-        let ctx = setup();
-        let dao = PgGroupDao::new(ctx.pool.clone());
-        let user = create_test_user(&ctx.pool, "empty_groups");
-
-        let result = dao
-            .get_user_groups(user.id)
-            .expect("Failed to get user groups");
-
-        assert!(result.is_empty());
-    }
-
-    #[test]
-    fn test_toggle_favorite_group() {
-        let ctx = setup();
-        let dao = PgGroupDao::new(ctx.pool.clone());
-        let user = create_test_user(&ctx.pool, "toggle_fav");
-        let location = create_test_location(&ctx.pool, "toggle_fav");
-        let group = create_test_group(&ctx.pool, user.id, location.id, "toggle_fav");
-
-        // Toggle on
-        let added = dao
-            .toggle_favorite_group(user.id, group.id)
-            .expect("Failed to toggle favorite");
-        assert!(added);
-
-        // Toggle off
-        let removed = dao
-            .toggle_favorite_group(user.id, group.id)
-            .expect("Failed to toggle favorite");
-        assert!(!removed);
-    }
-
-    #[test]
-    fn test_toggle_favorite_group_invalid_group() {
-        let ctx = setup();
-        let dao = PgGroupDao::new(ctx.pool.clone());
-        let user = create_test_user(&ctx.pool, "invalid_fav");
-
-        let result = dao.toggle_favorite_group(user.id, Uuid::new_v4());
-
-        assert!(matches!(result, Err(DaoError::ForeignKeyViolation(_))));
-    }
-}
-
-#[cfg(test)]
-mod integration_test {
-    use super::*;
-    use crate::test_utils::{create_test_location, create_test_user, setup};
-
-    #[test]
-    fn test_group_management_flow() {
-        let ctx = setup();
-        let dao = PgGroupDao::new(ctx.pool.clone());
-        let user = create_test_user(&ctx.pool, "mgmt_flow");
-        let location = create_test_location(&ctx.pool, "mgmt_flow");
-
-        // 1. Create group
-        let new_group = NewGroup {
-            owner_user_id: user.id,
-            location_id: location.id,
-            name: "Initial Name".to_string(),
-            description: "Initial Description".to_string(),
-        };
-        let created = dao.create_group(new_group).unwrap();
-
-        // 2. Verify creation
-        let fetched = dao.get_group(created.id).unwrap();
-        assert_eq!(fetched.name, "Initial Name");
-
-        // 3. Update group
-        let update = GroupUpdate {
-            name: Some("New Name".to_string()),
-            description: None,
-            location_id: None,
-            is_public: true,
-        };
-        dao.update_group(created.id, update).unwrap();
-
-        // 4. Verify update and presence in user groups
-        let user_groups = dao.get_user_groups(user.id).unwrap();
-        assert_eq!(user_groups.len(), 1);
-        assert_eq!(user_groups[0].name, "New Name");
-        assert!(user_groups[0].is_public);
-    }
-
-    #[test]
-    fn test_favorite_toggle_flow() {
-        let ctx = setup();
-        let dao = PgGroupDao::new(ctx.pool.clone());
-        let user = create_test_user(&ctx.pool, "fav_flow");
-        let location = create_test_location(&ctx.pool, "fav_flow");
-
-        let g1 = dao
-            .create_group(NewGroup {
+            let new_group = NewGroup {
                 owner_user_id: user.id,
                 location_id: location.id,
-                name: "G1".to_string(),
-                description: "D1".to_string(),
-            })
-            .unwrap();
+                name: "Test Group".to_string(),
+                description: "Test Description".to_string(),
+            };
 
-        // Toggle favorite
-        assert!(dao.toggle_favorite_group(user.id, g1.id).unwrap()); // Added
-        assert!(!dao.toggle_favorite_group(user.id, g1.id).unwrap()); // Removed
-        assert!(dao.toggle_favorite_group(user.id, g1.id).unwrap()); // Added again
+            let result = dao.create_group(new_group).expect("Failed to create group");
+
+            assert_eq!(result.name, "Test Group");
+            assert_eq!(result.owner_user_id, user.id);
+        }
+
+        #[test]
+        fn test_create_group_invalid_owner() {
+            let ctx = setup();
+            let dao = PgGroupDao::new(ctx.pool.clone());
+            let location = create_test_location(&ctx.pool, "invalid_owner");
+
+            let new_group = NewGroup {
+                owner_user_id: Uuid::new_v4(), // Non-existent user
+                location_id: location.id,
+                name: "Test Group".to_string(),
+                description: "Test Description".to_string(),
+            };
+
+            let result = dao.create_group(new_group);
+
+            assert!(matches!(result, Err(DaoError::ForeignKeyViolation(_))));
+        }
+
+        #[test]
+        fn test_update_group() {
+            let ctx = setup();
+            let dao = PgGroupDao::new(ctx.pool.clone());
+            let user = create_test_user(&ctx.pool, "update_group");
+            let location = create_test_location(&ctx.pool, "update_group");
+            let group = create_test_group(&ctx.pool, user.id, location.id, "update_group");
+
+            let update = GroupUpdate {
+                name: Some("Updated Name".to_string()),
+                description: Some("Updated Description".to_string()),
+                location_id: None,
+                is_public: true,
+            };
+
+            let result = dao
+                .update_group(group.id, update)
+                .expect("Failed to update group");
+
+            assert_eq!(result.name, "Updated Name");
+            assert_eq!(result.description, "Updated Description");
+            assert!(result.is_public);
+        }
+
+        #[test]
+        fn test_update_group_not_found() {
+            let ctx = setup();
+            let dao = PgGroupDao::new(ctx.pool.clone());
+
+            let update = GroupUpdate {
+                name: Some("Updated Name".to_string()),
+                description: None,
+                location_id: None,
+                is_public: false,
+            };
+
+            let result = dao.update_group(Uuid::new_v4(), update);
+
+            assert!(matches!(result, Err(DaoError::NotFound)));
+        }
+
+        #[test]
+        fn test_get_group() {
+            let ctx = setup();
+            let dao = PgGroupDao::new(ctx.pool.clone());
+            let user = create_test_user(&ctx.pool, "get_group");
+            let location = create_test_location(&ctx.pool, "get_group");
+            let group = create_test_group(&ctx.pool, user.id, location.id, "get_group");
+
+            let result = dao.get_group(group.id).expect("Failed to get group");
+
+            assert_eq!(result.id, group.id);
+            assert_eq!(result.name, group.name);
+        }
+
+        #[test]
+        fn test_get_group_not_found() {
+            let ctx = setup();
+            let dao = PgGroupDao::new(ctx.pool.clone());
+
+            let result = dao.get_group(Uuid::new_v4());
+
+            assert!(matches!(result, Err(DaoError::NotFound)));
+        }
+
+        #[test]
+        fn test_get_user_groups() {
+            let ctx = setup();
+            let dao = PgGroupDao::new(ctx.pool.clone());
+            let user = create_test_user(&ctx.pool, "user_groups");
+            let location = create_test_location(&ctx.pool, "user_groups");
+            create_test_group(&ctx.pool, user.id, location.id, "1");
+            create_test_group(&ctx.pool, user.id, location.id, "2");
+
+            let result = dao
+                .get_user_groups(user.id)
+                .expect("Failed to get user groups");
+
+            assert_eq!(result.len(), 2);
+        }
+
+        #[test]
+        fn test_get_user_groups_empty() {
+            let ctx = setup();
+            let dao = PgGroupDao::new(ctx.pool.clone());
+            let user = create_test_user(&ctx.pool, "empty_groups");
+
+            let result = dao
+                .get_user_groups(user.id)
+                .expect("Failed to get user groups");
+
+            assert!(result.is_empty());
+        }
+
+        #[test]
+        fn test_toggle_favorite_group() {
+            let ctx = setup();
+            let dao = PgGroupDao::new(ctx.pool.clone());
+            let user = create_test_user(&ctx.pool, "toggle_fav");
+            let location = create_test_location(&ctx.pool, "toggle_fav");
+            let group = create_test_group(&ctx.pool, user.id, location.id, "toggle_fav");
+
+            // Toggle on
+            let added = dao
+                .toggle_favorite_group(user.id, group.id)
+                .expect("Failed to toggle favorite");
+            assert!(added);
+
+            // Toggle off
+            let removed = dao
+                .toggle_favorite_group(user.id, group.id)
+                .expect("Failed to toggle favorite");
+            assert!(!removed);
+        }
+
+        #[test]
+        fn test_toggle_favorite_group_invalid_group() {
+            let ctx = setup();
+            let dao = PgGroupDao::new(ctx.pool.clone());
+            let user = create_test_user(&ctx.pool, "invalid_fav");
+
+            let result = dao.toggle_favorite_group(user.id, Uuid::new_v4());
+
+            assert!(matches!(result, Err(DaoError::ForeignKeyViolation(_))));
+        }
+    }
+
+    mod integration_test {
+        use super::*;
+
+        #[test]
+        fn test_group_management_flow() {
+            let ctx = setup();
+            let dao = PgGroupDao::new(ctx.pool.clone());
+            let user = create_test_user(&ctx.pool, "mgmt_flow");
+            let location = create_test_location(&ctx.pool, "mgmt_flow");
+
+            // 1. Create group
+            let new_group = NewGroup {
+                owner_user_id: user.id,
+                location_id: location.id,
+                name: "Initial Name".to_string(),
+                description: "Initial Description".to_string(),
+            };
+            let created = dao.create_group(new_group).unwrap();
+
+            // 2. Verify creation
+            let fetched = dao.get_group(created.id).unwrap();
+            assert_eq!(fetched.name, "Initial Name");
+
+            // 3. Update group
+            let update = GroupUpdate {
+                name: Some("New Name".to_string()),
+                description: None,
+                location_id: None,
+                is_public: true,
+            };
+            dao.update_group(created.id, update).unwrap();
+
+            // 4. Verify update and presence in user groups
+            let user_groups = dao.get_user_groups(user.id).unwrap();
+            assert_eq!(user_groups.len(), 1);
+            assert_eq!(user_groups[0].name, "New Name");
+            assert!(user_groups[0].is_public);
+        }
+
+        #[test]
+        fn test_favorite_toggle_flow() {
+            let ctx = setup();
+            let dao = PgGroupDao::new(ctx.pool.clone());
+            let user = create_test_user(&ctx.pool, "fav_flow");
+            let location = create_test_location(&ctx.pool, "fav_flow");
+
+            let g1 = dao
+                .create_group(NewGroup {
+                    owner_user_id: user.id,
+                    location_id: location.id,
+                    name: "G1".to_string(),
+                    description: "D1".to_string(),
+                })
+                .unwrap();
+
+            // Toggle favorite
+            assert!(dao.toggle_favorite_group(user.id, g1.id).unwrap()); // Added
+            assert!(!dao.toggle_favorite_group(user.id, g1.id).unwrap()); // Removed
+            assert!(dao.toggle_favorite_group(user.id, g1.id).unwrap()); // Added again
+        }
     }
 }

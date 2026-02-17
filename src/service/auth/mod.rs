@@ -263,212 +263,220 @@ mod tests {
     use crate::helpers::users_auth::{EmailPass, EmailPassConfirmation, EmailPassFields};
     use crate::test_utils::setup;
 
-    #[test]
-    fn test_register_and_authenticate_integration() {
-        let ctx = setup();
-        let dao = PgIdentityDao::new(ctx.pool.clone());
-        let service = AuthService::new(dao);
-
-        let login = "test_user".to_string();
-        let email = "test@example.com".to_string();
-        let hashed_pass = "hashed_password".to_string();
-
-        let register_input = RegisterInput {
-            login: login.clone(),
-            auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
-                email: email.clone(),
-                hashed_pass: hashed_pass.clone(),
-            })),
-        };
-
-        // Act - Register
-        let register_res = service
-            .register_user(register_input)
-            .expect("Failed to register user");
-        assert!(matches!(register_res, RegisterResponse::Success));
-
-        // Act - Authenticate
-        let login_input = LoginInput {
-            auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
-                email: email.clone(),
-                hashed_pass: hashed_pass.clone(),
-            })),
-        };
-
-        let token_pair = service
-            .authenticate_user(login_input)
-            .expect("Failed to authenticate")
-            .expect("User should be found");
-
-        assert!(!token_pair.session_token.is_empty());
-        assert!(!token_pair.refresh_token.is_empty());
-
-        // Act - Validate Session
-        let decoded = service
-            .validate_session(&token_pair.session_token)
-            .expect("Failed to validate session");
-        assert_eq!(decoded.login, login);
-        assert!(!decoded.is_refresh);
-
-        // Act - Refresh Session
-        let refresh_out = service
-            .refresh_session(&token_pair.refresh_token)
-            .expect("Failed to refresh session");
-        assert!(!refresh_out.session_token.is_empty());
-        assert!(!refresh_out.refresh_token.is_empty());
-
-        // Validate new session
-        let decoded_new = service
-            .validate_session(&refresh_out.session_token)
-            .expect("Failed to validate new session");
-        assert_eq!(decoded_new.login, login);
-
-        // Old refresh token should be invalid now
-        let old_refresh_res = service.refresh_session(&token_pair.refresh_token);
-        assert!(old_refresh_res.is_err());
+    mod unit_test {
+        // No unit tests for AuthService at the moment.
     }
 
-    #[test]
-    fn test_authenticate_invalid_credentials() {
-        let ctx = setup();
-        let dao = PgIdentityDao::new(ctx.pool.clone());
-        let service = AuthService::new(dao);
+    mod integration_test {
+        use super::*;
 
-        let login_input = LoginInput {
-            auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
-                email: "nonexistent@example.com".to_string(),
-                hashed_pass: "wrong_password".to_string(),
-            })),
-        };
+        #[test]
+        fn test_register_and_authenticate_integration() {
+            let ctx = setup();
+            let dao = PgIdentityDao::new(ctx.pool.clone());
+            let service = AuthService::new(dao);
 
-        let result = service
-            .authenticate_user(login_input)
-            .expect("Should not return error for invalid credentials");
-        assert!(result.is_none());
-    }
+            let login = "test_user".to_string();
+            let email = "test@example.com".to_string();
+            let hashed_pass = "hashed_password".to_string();
 
-    #[test]
-    fn test_validate_invalid_token() {
-        let ctx = setup();
-        let dao = PgIdentityDao::new(ctx.pool.clone());
-        let service = AuthService::new(dao);
-
-        let result = service.validate_session("invalid.token.here");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_register_user_duplicate_login() {
-        let ctx = setup();
-        let dao = PgIdentityDao::new(ctx.pool.clone());
-        let service = AuthService::new(dao);
-
-        let input = RegisterInput {
-            login: "duplicate".to_string(),
-            auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
-                email: "test1@example.com".to_string(),
-                hashed_pass: "pass".to_string(),
-            })),
-        };
-
-        service
-            .register_user(input)
-            .expect("First registration should succeed");
-
-        let input_duplicate = RegisterInput {
-            login: "duplicate".to_string(),
-            auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
-                email: "test2@example.com".to_string(),
-                hashed_pass: "pass".to_string(),
-            })),
-        };
-
-        let result = service.register_user(input_duplicate);
-        assert!(matches!(
-            result,
-            Err(ServiceError::DbError(DaoError::UniqueViolation(_)))
-        ));
-    }
-
-    #[test]
-    fn test_validate_session_with_refresh_token() {
-        let ctx = setup();
-        let dao = PgIdentityDao::new(ctx.pool.clone());
-        let service = AuthService::new(dao);
-
-        // Register and get tokens
-        let email = "test@example.com".to_string();
-        service
-            .register_user(RegisterInput {
-                login: "user".to_string(),
+            let register_input = RegisterInput {
+                login: login.clone(),
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email: email.clone(),
-                    hashed_pass: "pass".to_string(),
+                    hashed_pass: hashed_pass.clone(),
                 })),
-            })
-            .unwrap();
+            };
 
-        let tokens = service
-            .authenticate_user(LoginInput {
-                auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
-                    email,
-                    hashed_pass: "pass".to_string(),
-                })),
-            })
-            .unwrap()
-            .unwrap();
+            // Act - Register
+            let register_res = service
+                .register_user(register_input)
+                .expect("Failed to register user");
+            assert!(matches!(register_res, RegisterResponse::Success));
 
-        // Try to validate session using refresh token
-        let result = service.validate_session(&tokens.refresh_token);
-        assert!(matches!(result, Err(ServiceError::Forbidden)));
-    }
-
-    #[test]
-    fn test_refresh_session_with_session_token() {
-        let ctx = setup();
-        let dao = PgIdentityDao::new(ctx.pool.clone());
-        let service = AuthService::new(dao);
-
-        // Register and get tokens
-        let email = "test@example.com".to_string();
-        service
-            .register_user(RegisterInput {
-                login: "user".to_string(),
+            // Act - Authenticate
+            let login_input = LoginInput {
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email: email.clone(),
-                    hashed_pass: "pass".to_string(),
+                    hashed_pass: hashed_pass.clone(),
                 })),
-            })
-            .unwrap();
+            };
 
-        let tokens = service
-            .authenticate_user(LoginInput {
+            let token_pair = service
+                .authenticate_user(login_input)
+                .expect("Failed to authenticate")
+                .expect("User should be found");
+
+            assert!(!token_pair.session_token.is_empty());
+            assert!(!token_pair.refresh_token.is_empty());
+
+            // Act - Validate Session
+            let decoded = service
+                .validate_session(&token_pair.session_token)
+                .expect("Failed to validate session");
+            assert_eq!(decoded.login, login);
+            assert!(!decoded.is_refresh);
+
+            // Act - Refresh Session
+            let refresh_out = service
+                .refresh_session(&token_pair.refresh_token)
+                .expect("Failed to refresh session");
+            assert!(!refresh_out.session_token.is_empty());
+            assert!(!refresh_out.refresh_token.is_empty());
+
+            // Validate new session
+            let decoded_new = service
+                .validate_session(&refresh_out.session_token)
+                .expect("Failed to validate new session");
+            assert_eq!(decoded_new.login, login);
+
+            // Old refresh token should be invalid now
+            let old_refresh_res = service.refresh_session(&token_pair.refresh_token);
+            assert!(old_refresh_res.is_err());
+        }
+
+        #[test]
+        fn test_authenticate_invalid_credentials() {
+            let ctx = setup();
+            let dao = PgIdentityDao::new(ctx.pool.clone());
+            let service = AuthService::new(dao);
+
+            let login_input = LoginInput {
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
-                    email,
+                    email: "nonexistent@example.com".to_string(),
+                    hashed_pass: "wrong_password".to_string(),
+                })),
+            };
+
+            let result = service
+                .authenticate_user(login_input)
+                .expect("Should not return error for invalid credentials");
+            assert!(result.is_none());
+        }
+
+        #[test]
+        fn test_validate_invalid_token() {
+            let ctx = setup();
+            let dao = PgIdentityDao::new(ctx.pool.clone());
+            let service = AuthService::new(dao);
+
+            let result = service.validate_session("invalid.token.here");
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn test_register_user_duplicate_login() {
+            let ctx = setup();
+            let dao = PgIdentityDao::new(ctx.pool.clone());
+            let service = AuthService::new(dao);
+
+            let input = RegisterInput {
+                login: "duplicate".to_string(),
+                auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                    email: "test1@example.com".to_string(),
                     hashed_pass: "pass".to_string(),
                 })),
-            })
-            .unwrap()
-            .unwrap();
+            };
 
-        // Try to refresh session using session token
-        let result = service.refresh_session(&tokens.session_token);
-        assert!(matches!(result, Err(ServiceError::Forbidden)));
-    }
+            service
+                .register_user(input)
+                .expect("First registration should succeed");
 
-    #[test]
-    fn test_authenticate_forbidden_confirmation() {
-        let ctx = setup();
-        let dao = PgIdentityDao::new(ctx.pool.clone());
-        let service = AuthService::new(dao);
+            let input_duplicate = RegisterInput {
+                login: "duplicate".to_string(),
+                auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                    email: "test2@example.com".to_string(),
+                    hashed_pass: "pass".to_string(),
+                })),
+            };
 
-        let login_input = LoginInput {
-            auth_method: AuthMethod::EmailPass(EmailPass::Confirmation(EmailPassConfirmation {
-                email: "test@example.com".to_string(),
-            })),
-        };
+            let result = service.register_user(input_duplicate);
+            assert!(matches!(
+                result,
+                Err(ServiceError::DbError(DaoError::UniqueViolation(_)))
+            ));
+        }
 
-        let result = service.authenticate_user(login_input);
-        assert!(matches!(result, Err(ServiceError::Forbidden)));
+        #[test]
+        fn test_validate_session_with_refresh_token() {
+            let ctx = setup();
+            let dao = PgIdentityDao::new(ctx.pool.clone());
+            let service = AuthService::new(dao);
+
+            // Register and get tokens
+            let email = "test@example.com".to_string();
+            service
+                .register_user(RegisterInput {
+                    login: "user".to_string(),
+                    auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                        email: email.clone(),
+                        hashed_pass: "pass".to_string(),
+                    })),
+                })
+                .unwrap();
+
+            let tokens = service
+                .authenticate_user(LoginInput {
+                    auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                        email,
+                        hashed_pass: "pass".to_string(),
+                    })),
+                })
+                .unwrap()
+                .unwrap();
+
+            // Try to validate session using refresh token
+            let result = service.validate_session(&tokens.refresh_token);
+            assert!(matches!(result, Err(ServiceError::Forbidden)));
+        }
+
+        #[test]
+        fn test_refresh_session_with_session_token() {
+            let ctx = setup();
+            let dao = PgIdentityDao::new(ctx.pool.clone());
+            let service = AuthService::new(dao);
+
+            // Register and get tokens
+            let email = "test@example.com".to_string();
+            service
+                .register_user(RegisterInput {
+                    login: "user".to_string(),
+                    auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                        email: email.clone(),
+                        hashed_pass: "pass".to_string(),
+                    })),
+                })
+                .unwrap();
+
+            let tokens = service
+                .authenticate_user(LoginInput {
+                    auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                        email,
+                        hashed_pass: "pass".to_string(),
+                    })),
+                })
+                .unwrap()
+                .unwrap();
+
+            // Try to refresh session using session token
+            let result = service.refresh_session(&tokens.session_token);
+            assert!(matches!(result, Err(ServiceError::Forbidden)));
+        }
+
+        #[test]
+        fn test_authenticate_forbidden_confirmation() {
+            let ctx = setup();
+            let dao = PgIdentityDao::new(ctx.pool.clone());
+            let service = AuthService::new(dao);
+
+            let login_input = LoginInput {
+                auth_method: AuthMethod::EmailPass(EmailPass::Confirmation(EmailPassConfirmation {
+                    email: "test@example.com".to_string(),
+                })),
+            };
+
+            let result = service.authenticate_user(login_input);
+            assert!(matches!(result, Err(ServiceError::Forbidden)));
+        }
     }
 }

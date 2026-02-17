@@ -148,7 +148,7 @@ mod tests {
     use crate::test_utils::setup;
     use axum::extract::State;
 
-    mod unit_tests {
+    mod unit_test {
         // No unit tests for AuthController at the moment.
         // Unit tests would typically mock dependencies like AuthService and PgIdentityDao.
     }
