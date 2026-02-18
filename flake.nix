@@ -8,6 +8,7 @@
   };
 
   outputs = { self, nixpkgs, rust-overlay, flake-utils, ... }:
+    # 1. Define system-specific outputs (packages, devShells)
     flake-utils.lib.eachDefaultSystem (system:
       let
         overlays = [ (import rust-overlay) ];
@@ -17,13 +18,14 @@
 
         pgPackage = pkgs.postgresql_16;
 
-        # Script to initialize/start Postgres
+        # Modified script: Respects injected environment variables (like from systemd),
+        # but falls back to $PWD for `nix develop` use.
         pgSetupScript = pkgs.writeShellScriptBin "setup-postgres" ''
-          export PGDATA=$PWD/.nix-pg/data
-          export PGHOST=$PWD/.nix-pg/run
-          export PGLOG=$PWD/.nix-pg/postgres.log
+          export PGDATA="''${PGDATA:-$PWD/.nix-pg/data}"
+          export PGHOST="''${PGHOST:-$PWD/.nix-pg/run}"
+          export PGLOG="''${PGLOG:-$PWD/.nix-pg/postgres.log}"
 
-          mkdir -p $PGHOST
+          mkdir -p "$PGHOST"
 
           if [ ! -d "$PGDATA" ]; then
             echo "Initializing postgres data directory..."
@@ -48,8 +50,23 @@
           fi
         '';
 
+        # Add your Rust application package so the Home Manager module can use it
+        rustApp = pkgs.rustPlatform.buildRustPackage {
+          pname = "tfg-backend"; # Replace with your actual crate name
+          version = "0.1.0";
+          src = ./.;
+          cargoLock = { lockFile = ./Cargo.lock; };
+          nativeBuildInputs = [ pkgs.pkg-config ];
+          buildInputs = [ pkgs.openssl pgPackage ];
+        };
+
       in
       {
+        packages = {
+          default = rustApp;
+          setup-postgres = pgSetupScript;
+        };
+
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
             openssl
@@ -73,5 +90,66 @@
           '';
         };
       }
-    );
+    ) // {
+      # 2. Define system-agnostic outputs (Home Manager Modules)
+      homeManagerModules.default = { config, lib, pkgs, ... }:
+        let
+          cfg = config.services.tfg-backend;
+        in {
+          options.services.tfg-backend = {
+            enable = lib.mkEnableOption "Rust Dev environment service";
+
+            package = lib.mkOption {
+              type = lib.types.package;
+              default = self.packages.${pkgs.system}.default;
+              description = "The Rust application package to run.";
+            };
+
+            setupScript = lib.mkOption {
+              type = lib.types.package;
+              default = self.packages.${pkgs.system}.setup-postgres;
+              description = "The postgres initialization script.";
+            };
+          };
+
+          config = lib.mkIf cfg.enable {
+            systemd.user.services.tfg-backend = {
+              Unit = {
+                Description = "Rust Dev Environment with Embedded Postgres";
+                After = [ "network.target" ];
+              };
+
+              Service = {
+                # %S resolves to ~/.local/state, %t resolves to $XDG_RUNTIME_DIR
+                Environment = [
+                  "RUST_LOG=debug"
+                  "PGDATA=%S/tfg-backend/pg/data"
+                  "PGHOST=%t/tfg-backend/pg/run"
+                  "PGLOG=%S/tfg-backend/pg/postgres.log"
+                  "DATABASE_URL=postgres://postgres@localhost/postgres?host=%t/tfg-backend/pg/run"
+                ];
+
+                # Tells systemd to automatically create these directories for the service
+                StateDirectory = "tfg-backend";
+                RuntimeDirectory = "tfg-backend";
+
+                # Start the database script before the main application
+                ExecStartPre = "${cfg.setupScript}/bin/setup-postgres";
+
+                # Start your Rust binary
+                ExecStart = "${cfg.package}/bin/my_rust_app"; # Replace with your binary name
+
+                # Stop the database when the service shuts down
+                ExecStopPost = "${pkgs.postgresql_16}/bin/pg_ctl stop -D %S/tfg-backend/pg/data -m fast";
+
+                Restart = "always";
+              };
+
+              Install = {
+                WantedBy = [ "default.target" ];
+              };
+            };
+          };
+        };
+    };
 }
