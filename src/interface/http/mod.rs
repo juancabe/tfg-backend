@@ -5,10 +5,11 @@
 use axum::{
     Json, Router, extract::rejection::JsonRejection, http::StatusCode, response::IntoResponse,
 };
+use axum_server::tls_rustls::RustlsConfig;
 use diesel::{PgConnection, r2d2::ConnectionManager};
 use dotenvy::dotenv;
 use serde::Serialize;
-use std::{env, net::SocketAddr, sync::Arc};
+use std::{env, net::SocketAddr, path::PathBuf, sync::Arc};
 use thiserror::Error;
 use tokio::io;
 
@@ -53,6 +54,10 @@ impl Http {
             // AuthController
             .with_state(state);
         log::info!("Created HTTP Router");
+
+        let config = RustlsConfig::from_pem_file(cert, key);
+
+        axum_server::bind_rustls(addr, config)
 
         axum::serve(listener, app).await.map_err(Into::into)
     }
