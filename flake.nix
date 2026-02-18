@@ -52,12 +52,13 @@
 
         # Add your Rust application package so the Home Manager module can use it
         rustApp = pkgs.rustPlatform.buildRustPackage {
-          pname = "tfg-backend"; # Replace with your actual crate name
+          pname = "backend";
           version = "0.1.0";
           src = ./.;
           cargoLock = { lockFile = ./Cargo.lock; };
           nativeBuildInputs = [ pkgs.pkg-config ];
           buildInputs = [ pkgs.openssl pgPackage ];
+          doCheck = false;
         };
 
       in
@@ -110,6 +111,13 @@
               default = self.packages.${pkgs.system}.setup-postgres;
               description = "The postgres initialization script.";
             };
+
+            # Add the new option for your secret file
+            jwtKeyFile = lib.mkOption {
+              type = lib.types.str;
+              description = "Path to a file containing the JWT_KEY_BASE64 environment variable.";
+              example = "%h/.config/my-app/secrets.env";
+            };
           };
 
           config = lib.mkIf cfg.enable {
@@ -120,7 +128,7 @@
               };
 
               Service = {
-                # %S resolves to ~/.local/state, %t resolves to $XDG_RUNTIME_DIR
+                # Your standard, non-secret environment variables
                 Environment = [
                   "RUST_LOG=debug"
                   "PGDATA=%S/tfg-backend/pg/data"
@@ -129,19 +137,15 @@
                   "DATABASE_URL=postgres://postgres@localhost/postgres?host=%t/tfg-backend/pg/run"
                 ];
 
-                # Tells systemd to automatically create these directories for the service
+                # Load secret environment variables dynamically at runtime
+                EnvironmentFile = cfg.jwtKeyFile;
+
                 StateDirectory = "tfg-backend";
                 RuntimeDirectory = "tfg-backend";
 
-                # Start the database script before the main application
                 ExecStartPre = "${cfg.setupScript}/bin/setup-postgres";
-
-                # Start your Rust binary
-                ExecStart = "${cfg.package}/bin/my_rust_app"; # Replace with your binary name
-
-                # Stop the database when the service shuts down
+                ExecStart = "${cfg.package}/bin/main";
                 ExecStopPost = "${pkgs.postgresql_16}/bin/pg_ctl stop -D %S/tfg-backend/pg/data -m fast";
-
                 Restart = "always";
               };
 
