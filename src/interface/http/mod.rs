@@ -3,23 +3,27 @@
 //! Implementation of the HTTP server using ['axum'] and ['tokio']
 
 use axum::{
-    Json, Router, extract::rejection::JsonRejection, http::StatusCode, response::IntoResponse,
+    Json, Router,
+    extract::rejection::JsonRejection,
+    http::StatusCode,
+    response::IntoResponse,
+    routing::{get, post},
 };
-use axum_server::tls_rustls::RustlsConfig;
 use diesel::{PgConnection, r2d2::ConnectionManager};
 use dotenvy::dotenv;
 use serde::Serialize;
-use std::{env, net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{env, net::SocketAddr, sync::Arc};
 use thiserror::Error;
 use tokio::io;
 
 use crate::{
     dao::{DbPool, MAX_DB_POOL_SIZE},
     helpers::http_app_state::AppState,
+    interface::http::{auth_controller::AuthController, producer_controller::ProducerController},
     service::ServiceError,
 };
 
-pub const DEFAULT_PORT: u16 = 7777;
+pub const DEFAULT_PORT: u16 = 8080;
 
 #[derive(Debug, Error)]
 pub enum HttpError {
@@ -32,6 +36,7 @@ pub enum HttpError {
 }
 
 pub mod auth_controller;
+pub mod extractor;
 pub mod producer_controller;
 
 pub struct Http {}
@@ -51,13 +56,19 @@ impl Http {
         let state = AppState { pool };
 
         let app = Router::new()
-            // AuthController
+            .route("/auth/login", post(AuthController::post_login))
+            .route("/auth/register", post(AuthController::post_register))
+            .route("/auth/refresh", post(AuthController::post_refresh))
+            .route(
+                "/producers",
+                get(ProducerController::get_producers).post(ProducerController::post_producer),
+            )
+            .route(
+                "/producers/{id}",
+                get(ProducerController::get_producer_by_id),
+            )
             .with_state(state);
         log::info!("Created HTTP Router");
-
-        let config = RustlsConfig::from_pem_file(cert, key);
-
-        axum_server::bind_rustls(addr, config)
 
         axum::serve(listener, app).await.map_err(Into::into)
     }
