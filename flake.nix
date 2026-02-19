@@ -96,6 +96,18 @@
       homeManagerModules.default = { config, lib, pkgs, ... }:
         let
           cfg = config.services.tfg-backend;
+
+          caddyfile = pkgs.writeText "Caddyfile" ''
+            {
+                http_port 7777
+                https_port 7778
+            }
+
+            ${cfg.domain} {
+                # Proxy to your Rust backend (assuming it listens on 8080)
+                reverse_proxy 127.0.0.1:8080
+            }
+          '';
         in {
           options.services.tfg-backend = {
             enable = lib.mkEnableOption "Rust Dev environment service";
@@ -118,9 +130,33 @@
               description = "Path to a file containing the JWT_KEY_BASE64 environment variable.";
               example = "%h/.config/my-app/secrets.env";
             };
+
+            domain = lib.mkOption {
+              type = lib.types.str;
+              default = "localhost";
+              description = "The domain name for Caddy to serve and enable TLS";
+            };
           };
 
           config = lib.mkIf cfg.enable {
+            systemd.user.services.caddy = {
+              Unit = {
+                Description = "Caddy Reverse Proxy";
+                After = [ "network.target" ];
+              };
+
+              Service = {
+                ExecStart = "${pkgs.caddy}/bin/caddy run --config ${caddyfile} --adapter caddyfile";
+                ExecReload = "${pkgs.caddy}/bin/caddy reload --config ${caddyfile} --adapter caddyfile";
+                Restart = "always";
+                
+                StateDirectory = "caddy";
+              };
+
+              Install = {
+                WantedBy = [ "default.target" ];
+              };
+            };
             systemd.user.services.tfg-backend = {
               Unit = {
                 Description = "Rust Dev Environment with Embedded Postgres";

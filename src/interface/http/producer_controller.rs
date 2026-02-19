@@ -60,7 +60,7 @@ impl From<Producer> for PostProducerResponse {
 
 // TODO: Docs
 impl ProducerController {
-    pub fn get_producers(
+    pub async fn get_producers(
         jwt: JWT,
         State(AppState { pool }): State<AppState>,
     ) -> Result<Json<GetProducersResponse>, HttpApiError> {
@@ -69,7 +69,7 @@ impl ProducerController {
         Ok(Json(GetProducersResponse::from(producers)))
     }
 
-    pub fn get_producer_by_id(
+    pub async fn get_producer_by_id(
         jwt: JWT,
         State(AppState { pool }): State<AppState>,
         Path(id): Path<Uuid>,
@@ -81,7 +81,7 @@ impl ProducerController {
         Ok(Json(GetProducerResponse::from(producer)))
     }
 
-    pub fn post_producer(
+    pub async fn post_producer(
         jwt: JWT,
         State(AppState { pool }): State<AppState>,
         Json(body): Json<PostProducerBody>,
@@ -124,8 +124,8 @@ mod tests {
             )
         }
 
-        #[test]
-        fn test_get_producers_success() {
+        #[tokio::test]
+        async fn test_get_producers_success() {
             let ctx = setup();
             let user = create_test_user(&ctx.pool, "owner");
             let location = create_test_location(&ctx.pool, "loc");
@@ -135,13 +135,13 @@ mod tests {
             let jwt = mock_jwt(user.id, user.login);
             let state = State(AppState { pool: ctx.pool });
 
-            let res = ProducerController::get_producers(jwt, state).unwrap();
+            let res = ProducerController::get_producers(jwt, state).await.unwrap();
             assert_eq!(res.0.pairs.len(), 1);
             assert_eq!(res.0.pairs[0].1.len(), 1);
         }
 
-        #[test]
-        fn test_get_producer_by_id_success() {
+        #[tokio::test]
+        async fn test_get_producer_by_id_success() {
             let ctx = setup();
             let user = create_test_user(&ctx.pool, "owner");
             let location = create_test_location(&ctx.pool, "loc");
@@ -151,24 +151,26 @@ mod tests {
             let jwt = mock_jwt(user.id, user.login);
             let state = State(AppState { pool: ctx.pool });
 
-            let res =
-                ProducerController::get_producer_by_id(jwt, state, Path(producer.id)).unwrap();
+            let res = ProducerController::get_producer_by_id(jwt, state, Path(producer.id))
+                .await
+                .unwrap();
             assert_eq!(res.0.producer.id, producer.id);
         }
 
-        #[test]
-        fn test_get_producer_by_id_not_found() {
+        #[tokio::test]
+        async fn test_get_producer_by_id_not_found() {
             let ctx = setup();
             let user = create_test_user(&ctx.pool, "owner");
             let jwt = mock_jwt(user.id, user.login);
             let state = State(AppState { pool: ctx.pool });
 
-            let res = ProducerController::get_producer_by_id(jwt, state, Path(Uuid::new_v4()));
+            let res =
+                ProducerController::get_producer_by_id(jwt, state, Path(Uuid::new_v4())).await;
             assert!(res.is_err());
         }
 
-        #[test]
-        fn test_post_producer_success() {
+        #[tokio::test]
+        async fn test_post_producer_success() {
             let ctx = setup();
             let user = create_test_user(&ctx.pool, "owner");
             let location = create_test_location(&ctx.pool, "loc");
@@ -191,12 +193,14 @@ mod tests {
                 },
             });
 
-            let res = ProducerController::post_producer(jwt, state, body).unwrap();
+            let res = ProducerController::post_producer(jwt, state, body)
+                .await
+                .unwrap();
             assert_eq!(res.0.producer.name, "New Prod");
         }
 
-        #[test]
-        fn test_post_producer_forbidden() {
+        #[tokio::test]
+        async fn test_post_producer_forbidden() {
             let ctx = setup();
             let owner = create_test_user(&ctx.pool, "owner");
             let other = create_test_user(&ctx.pool, "other");
@@ -220,7 +224,7 @@ mod tests {
                 },
             });
 
-            let res = ProducerController::post_producer(jwt, state, body);
+            let res = ProducerController::post_producer(jwt, state, body).await;
             assert!(res.is_err());
         }
     }
