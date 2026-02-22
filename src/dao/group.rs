@@ -15,8 +15,9 @@ pub enum GroupRole {
 
 pub trait GroupDao {
     fn create_group(&self, new_group: NewGroup) -> Result<Group, DaoError>;
-    fn update_group(&self, group_id: Uuid, update: GroupUpdate) -> Result<Group, DaoError>;
     fn get_group(&self, group_id: Uuid) -> Result<Group, DaoError>;
+    fn update_group(&self, group_id: Uuid, update: GroupUpdate) -> Result<Group, DaoError>;
+    fn delete_group(&self, group_id: Uuid) -> Result<(), DaoError>;
     fn get_user_groups(&self, user_id: Uuid) -> Result<Vec<Group>, DaoError>;
     fn toggle_favorite_group(&self, user_id_in: Uuid, group_id_in: Uuid) -> Result<bool, DaoError>;
 }
@@ -57,6 +58,19 @@ impl GroupDao for PgGroupDao {
             .returning(Group::as_returning())
             .get_result(conn)
             .map_err(Into::into)
+    }
+
+    fn delete_group(&self, group_id_in: Uuid) -> Result<(), DaoError> {
+        use crate::model::schema::groups::dsl::*;
+        let conn = &mut self.pool.get()?;
+        let rows = diesel::delete(groups.find(group_id_in)).execute(conn)?;
+        match rows {
+            1 => Ok(()),
+            0 => Err(DaoError::NotFound),
+            _ => Err(DaoError::OtherRare(format!(
+                "group_id_in delete affected rows: {rows}"
+            ))),
+        }
     }
 
     fn get_group(&self, group_id: Uuid) -> Result<Group, DaoError> {
@@ -289,6 +303,30 @@ mod tests {
             let result = dao.toggle_favorite_group(user.id, Uuid::new_v4());
 
             assert!(matches!(result, Err(DaoError::ForeignKeyViolation(_))));
+        }
+
+        #[test]
+        fn test_delete_group() {
+            let ctx = setup();
+            let dao = PgGroupDao::new(ctx.pool.clone());
+            let user = create_test_user(&ctx.pool, "delete_group");
+            let location = create_test_location(&ctx.pool, "delete_group");
+            let group = create_test_group(&ctx.pool, user.id, location.id, "delete_group");
+
+            dao.delete_group(group.id).expect("Failed to delete group");
+
+            let result = dao.get_group(group.id);
+            assert!(matches!(result, Err(DaoError::NotFound)));
+        }
+
+        #[test]
+        fn test_delete_group_not_found() {
+            let ctx = setup();
+            let dao = PgGroupDao::new(ctx.pool.clone());
+
+            let result = dao.delete_group(Uuid::new_v4());
+
+            assert!(matches!(result, Err(DaoError::NotFound)));
         }
     }
 

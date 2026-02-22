@@ -59,6 +59,10 @@
           nativeBuildInputs = [ pkgs.pkg-config ];
           buildInputs = [ pkgs.openssl pgPackage ];
           doCheck = false;
+          postInstall = ''
+            mkdir -p $out/share
+            cp -r migrations $out/share/migrations
+          '';
         };
 
       in
@@ -179,7 +183,10 @@
                 StateDirectory = "tfg-backend";
                 RuntimeDirectory = "tfg-backend";
 
-                ExecStartPre = "${cfg.setupScript}/bin/setup-postgres";
+                ExecStartPre = [
+                  "${cfg.setupScript}/bin/setup-postgres"
+                  "${pkgs.diesel-cli}/bin/diesel migration run --migration-dir ${cfg.package}/share/migrations"
+                ];
                 ExecStart = "${cfg.package}/bin/main";
                 ExecStopPost = "${pkgs.postgresql_16}/bin/pg_ctl stop -D %S/tfg-backend/pg/data -m fast";
                 Restart = "always";

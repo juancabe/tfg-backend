@@ -17,7 +17,7 @@ You must look at `to test files` the user tells you to look at.
 
 For every method tested, you must include at least one failure case (e.g., handling None, Err, or invalid input) unless the logic is strictly infallible
 
-Methods you must write tests for are marked with a TODO indicating the test kind required (if you notice something on the tagged file looks finished and should also be tested, you should stop (don't start writing code) and ask the user if they want that to be tested too).
+Methods you must write tests for are marked with a TODO comment (not a todo! Rust macro) indicating the test kind required (if you notice something on the tagged file looks finished and should also be tested, you should stop (don't start writing code) and ask the user if they want that to be tested too).
 
 You must run `cargo test` to run the tests, also, run the linter to fix lint errors (`cargo clippy`), you shouldn't "fix" (modify) any file you didn't work with.
 

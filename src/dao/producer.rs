@@ -197,10 +197,13 @@ impl ProducerDao for PgProducerDao {
     fn delete(&self, producer_id: Uuid) -> Result<(), DaoError> {
         use crate::model::schema::producers::dsl::*;
         let conn = &mut self.pool.get()?;
-        diesel::delete(producers.find(producer_id))
-            .execute(conn)
-            .map(|_| ())
-            .map_err(Into::into)
+        match diesel::delete(producers.find(producer_id)).execute(conn)? {
+            1 => Ok(()),
+            0 => Err(DaoError::NotFound),
+            rows => Err(DaoError::OtherRare(format!(
+                "group_id_in delete affected rows: {rows}"
+            ))),
+        }
     }
 }
 
@@ -413,6 +416,62 @@ mod tests {
             let found = dao.get_by_id(producer.id).expect("Failed to check");
             assert!(found.is_none());
         }
+
+        #[test]
+        fn test_update_last_seen_not_found() {
+            let ctx = setup();
+            let dao = PgProducerDao::new(ctx.pool.clone());
+            
+            let result = dao.update_last_seen(Uuid::new_v4());
+            
+            // update_last_seen uses update_expect_eq which uses returning, if no row found, it's NotFound
+            // Diesel returns NotFound if 0 rows updated when using get_result
+            assert!(matches!(result, Err(DaoError::NotFound)));
+        }
+
+        #[test]
+        fn test_update_group_not_found() {
+            let ctx = setup();
+            let dao = PgProducerDao::new(ctx.pool.clone());
+            let user = create_test_user(&ctx.pool, "ugnf_user");
+            let location = create_test_location(&ctx.pool, "ugnf_loc");
+            let group = create_test_group(&ctx.pool, user.id, location.id, "ugnf_grp");
+
+            let result = dao.update_group(Uuid::new_v4(), group.id);
+            
+            assert!(matches!(result, Err(DaoError::NotFound)));
+        }
+
+        #[test]
+        fn test_set_forwarder_not_found() {
+            let ctx = setup();
+            let dao = PgProducerDao::new(ctx.pool.clone());
+            
+            let result = dao.set_forwarder(Uuid::new_v4(), Uuid::new_v4());
+            
+            assert!(matches!(result, Err(DaoError::NotFound)));
+        }
+
+        #[test]
+        fn test_set_internet_auth_not_found() {
+            let ctx = setup();
+            let dao = PgProducerDao::new(ctx.pool.clone());
+            
+            // This is an INSERT. If producer_id doesn't exist, it should be a ForeignKeyViolation
+            let result = dao.set_internet_auth(Uuid::new_v4(), "key".to_string());
+            
+            assert!(matches!(result, Err(DaoError::ForeignKeyViolation(_))));
+        }
+
+        #[test]
+        fn test_delete_not_found() {
+            let ctx = setup();
+            let dao = PgProducerDao::new(ctx.pool.clone());
+            
+            let result = dao.delete(Uuid::new_v4());
+            
+            assert!(matches!(result, Err(DaoError::NotFound)));
+        }
     }
 
     mod integration_test {
@@ -441,14 +500,18 @@ mod tests {
                 .expect("Create failed");
 
             // 3. Update group
-            dao.update_group(producer.id, group2.id).expect("Update group failed");
+            dao.update_group(producer.id, group2.id)
+                .expect("Update group failed");
 
             // 4. Set auth
             let key = "base64key".to_string();
-            dao.set_internet_auth(producer.id, key.clone()).expect("Set auth failed");
+            dao.set_internet_auth(producer.id, key.clone())
+                .expect("Set auth failed");
 
             // 5. Verify credentials and state
-            let creds = dao.get_auth_credentials(producer.id).expect("Get creds failed");
+            let creds = dao
+                .get_auth_credentials(producer.id)
+                .expect("Get creds failed");
             match creds {
                 ProducerAuthCredentials::Internet(auth) => {
                     assert_eq!(auth.x25519_pub_key_bytes_base64, key);
@@ -456,7 +519,10 @@ mod tests {
                 _ => panic!("Expected Internet auth"),
             }
 
-            let updated = dao.get_by_id(producer.id).expect("Get producer failed").unwrap();
+            let updated = dao
+                .get_by_id(producer.id)
+                .expect("Get producer failed")
+                .unwrap();
             assert_eq!(updated.group_id, group2.id);
 
             // 6. Delete
