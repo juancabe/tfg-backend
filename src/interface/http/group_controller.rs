@@ -20,18 +20,30 @@ pub struct GetGroupsResponse {
     pub groups: Vec<Group>,
 }
 
+#[derive(Debug, Deserialize, Serialize, utoipa::ToSchema)]
 pub struct GetGroupResponse {
     pub group: Group,
 }
 
+#[derive(Debug, Deserialize, Serialize, utoipa::ToSchema)]
 pub struct PostGroupBody {
     pub group: NewGroup,
 }
 
+#[derive(Debug, Deserialize, Serialize, utoipa::ToSchema)]
 pub struct PostGroupResponse {
     pub group: Group,
 }
 
+#[utoipa::path(
+    get,
+    path = "/groups",
+    tag = "groups",
+    responses(
+        (status = 200, description = "List groups", body = GetGroupsResponse),
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn get_groups(
     jwt: JWT,
     State(AppState { pool }): State<AppState>,
@@ -41,6 +53,18 @@ pub async fn get_groups(
     Ok(Json(GetGroupsResponse { groups }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/groups/{id}",
+    tag = "groups",
+    params(
+        ("id" = Uuid, Path, description = "Group ID")
+    ),
+    responses(
+        (status = 200, description = "Group details", body = GetGroupResponse),
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn get_group_by_id(
     jwt: JWT,
     State(AppState { pool }): State<AppState>,
@@ -51,6 +75,16 @@ pub async fn get_group_by_id(
     Ok(Json(GetGroupResponse { group }))
 }
 
+#[utoipa::path(
+    post,
+    path = "/groups",
+    tag = "groups",
+    request_body = PostGroupBody,
+    responses(
+        (status = 201, description = "Group created", body = PostGroupResponse),
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn post_group(
     jwt: JWT,
     State(AppState { pool }): State<AppState>,
