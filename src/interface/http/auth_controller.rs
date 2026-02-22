@@ -18,15 +18,13 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-pub struct AuthController {}
-
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 /// Holds a JWT refresh token hash
 pub struct RefreshPayload {
     pub refresh_token: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 /// Returns corresponding JWT hashes
 pub struct RefreshSessionResponse {
     pub session_token: String,
@@ -42,27 +40,27 @@ impl From<RefreshSessionOut> for RefreshSessionResponse {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 /// Accepts a unique `login` and [`AuthMethod`]
 pub struct RegisterPayload {
     pub login: String,
     pub auth_method: AuthMethod,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, utoipa::ToSchema)]
 /// Returns the used `login`
 pub enum RegisterResponse {
     Success,
     NeedsVerification,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 /// Accepts the [`AuthMethod`] that'll be used to login
 pub struct LoginPayload {
     pub auth_method: AuthMethod,
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, utoipa::ToSchema)]
 /// Returns whether login was valid and the corresponding response data
 pub enum LoginResponse {
     Correct(CorrectLoginResponse),
@@ -79,7 +77,7 @@ impl IntoResponse for LoginResponse {
     }
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, utoipa::ToSchema)]
 pub struct CorrectLoginResponse {
     pub session_token: String,
     pub refresh_token: String,
@@ -94,50 +92,70 @@ impl From<TokenPair> for CorrectLoginResponse {
     }
 }
 
-impl AuthController {
-    /// `post_refresh`
-    ///
-    /// Use of `refresh` token to create new `refresh` and `session` token
-    pub async fn post_refresh(
-        State(AppState { pool }): State<AppState>,
-        payload: Result<Json<RefreshPayload>, JsonRejection>,
-    ) -> Result<Json<RefreshSessionResponse>, HttpApiError> {
-        let payload_refresh = &payload?.refresh_token;
-        let dao = PgIdentityDao::new(pool);
-        let service = AuthService::new(dao);
-        let output = service.refresh_session(payload_refresh)?;
-        Ok(Json(output.into()))
-    }
+/// `post_refresh`
+///
+/// Use of `refresh` token to create new `refresh` and `session` token
+#[utoipa::path(
+    post,
+    path = "/auth/refresh",
+    tag = "auth",
+    request_body(content = RefreshPayload, description = "Refresh token"),
+    responses((status = 200, description = "Successfully refreshed session", body = RefreshSessionResponse))
+)]
+pub async fn post_refresh(
+    State(AppState { pool }): State<AppState>,
+    payload: Result<Json<RefreshPayload>, JsonRejection>,
+) -> Result<Json<RefreshSessionResponse>, HttpApiError> {
+    let payload_refresh = &payload?.refresh_token;
+    let dao = PgIdentityDao::new(pool);
+    let service = AuthService::new(dao);
+    let output = service.refresh_session(payload_refresh)?;
+    Ok(Json(output.into()))
+}
 
-    /// `post_register`
-    ///
-    /// Use of [`RegisterPayload`] to create a new `User` on the system
-    pub async fn post_register(
-        State(AppState { pool }): State<AppState>,
-        payload: Result<Json<RegisterPayload>, JsonRejection>,
-    ) -> Result<Json<RegisterResponse>, HttpApiError> {
-        let payload = payload?.0;
-        let dao = PgIdentityDao::new(pool);
-        let service = AuthService::new(dao);
-        let created = service.register_user(payload.into())?;
-        Ok(Json(created))
-    }
+/// `post_register`
+///
+/// Use of [`RegisterPayload`] to create a new `User` on the system
+#[utoipa::path(
+    post,
+    path = "/auth/register",
+    tag = "auth",
+    request_body(content = RegisterPayload, description = "Login and auth method"),
+    responses((status = 200, description = "Successfully registered, may need verification", body = RegisterResponse))
+)]
 
-    /// `post_login`
-    ///
-    /// Use of [`LoginPayload`] to create a new `User` on the system
-    pub async fn post_login(
-        State(AppState { pool }): State<AppState>,
-        payload: Result<Json<LoginPayload>, JsonRejection>,
-    ) -> Result<LoginResponse, HttpApiError> {
-        let payload = payload?.0;
-        let dao = PgIdentityDao::new(pool);
-        let service = AuthService::new(dao);
-        if let Some(tokens) = service.authenticate_user(payload.into())? {
-            Ok(LoginResponse::Correct(tokens.into()))
-        } else {
-            Ok(LoginResponse::InvalidCredentials)
-        }
+pub async fn post_register(
+    State(AppState { pool }): State<AppState>,
+    payload: Result<Json<RegisterPayload>, JsonRejection>,
+) -> Result<Json<RegisterResponse>, HttpApiError> {
+    let payload = payload?.0;
+    let dao = PgIdentityDao::new(pool);
+    let service = AuthService::new(dao);
+    let created = service.register_user(payload.into())?;
+    Ok(Json(created))
+}
+
+/// `post_login`
+///
+/// Use of [`LoginPayload`] to create a new `User` on the system
+#[utoipa::path(
+    post,
+    path = "/auth/login",
+    tag = "auth",
+    request_body(content = LoginPayload, description = "Auth method"),
+    responses((status = 200, description = "Tried to log in, may have provided incorrect credentials", body = LoginResponse))
+)]
+pub async fn post_login(
+    State(AppState { pool }): State<AppState>,
+    payload: Result<Json<LoginPayload>, JsonRejection>,
+) -> Result<LoginResponse, HttpApiError> {
+    let payload = payload?.0;
+    let dao = PgIdentityDao::new(pool);
+    let service = AuthService::new(dao);
+    if let Some(tokens) = service.authenticate_user(payload.into())? {
+        Ok(LoginResponse::Correct(tokens.into()))
+    } else {
+        Ok(LoginResponse::InvalidCredentials)
     }
 }
 
@@ -154,6 +172,8 @@ mod tests {
     }
 
     mod integration_test {
+        use crate::interface::http::auth_controller;
+
         use super::*;
 
         #[tokio::test]
@@ -168,7 +188,9 @@ mod tests {
                 })),
             }));
 
-            let res = AuthController::post_register(state, payload).await.unwrap();
+            let res = auth_controller::post_register(state, payload)
+                .await
+                .unwrap();
             assert!(matches!(res.0, RegisterResponse::Success));
         }
 
@@ -186,7 +208,7 @@ mod tests {
                 })),
             };
 
-            let _ = AuthController::post_register(state.clone(), Ok(Json(payload)))
+            let _ = auth_controller::post_register(state.clone(), Ok(Json(payload)))
                 .await
                 .unwrap();
 
@@ -199,7 +221,7 @@ mod tests {
                 })),
             }));
 
-            let res = AuthController::post_register(state, payload_dup).await;
+            let res = auth_controller::post_register(state, payload_dup).await;
             assert!(res.is_err());
         }
 
@@ -218,7 +240,7 @@ mod tests {
                     hashed_pass: "password".to_string(),
                 })),
             };
-            let _ = AuthController::post_register(state.clone(), Ok(Json(register_payload)))
+            let _ = auth_controller::post_register(state.clone(), Ok(Json(register_payload)))
                 .await
                 .unwrap();
 
@@ -230,7 +252,7 @@ mod tests {
                 })),
             }));
 
-            let res = AuthController::post_login(state, login_payload)
+            let res = auth_controller::post_login(state, login_payload)
                 .await
                 .unwrap();
             assert!(matches!(res, LoginResponse::Correct(_)));
@@ -248,7 +270,7 @@ mod tests {
                 })),
             }));
 
-            let res = AuthController::post_login(state, login_payload)
+            let res = auth_controller::post_login(state, login_payload)
                 .await
                 .unwrap();
             assert!(matches!(res, LoginResponse::InvalidCredentials));
@@ -270,7 +292,7 @@ mod tests {
                     hashed_pass: "password".to_string(),
                 })),
             };
-            let _ = AuthController::post_register(state.clone(), Ok(Json(register_payload)))
+            let _ = auth_controller::post_register(state.clone(), Ok(Json(register_payload)))
                 .await
                 .unwrap();
 
@@ -282,7 +304,7 @@ mod tests {
                 })),
             }));
 
-            let res = AuthController::post_login(state, login_payload)
+            let res = auth_controller::post_login(state, login_payload)
                 .await
                 .unwrap();
             assert!(matches!(res, LoginResponse::InvalidCredentials));
@@ -303,7 +325,7 @@ mod tests {
                     hashed_pass: "password".to_string(),
                 })),
             };
-            let _ = AuthController::post_register(state.clone(), Ok(Json(register_payload)))
+            let _ = auth_controller::post_register(state.clone(), Ok(Json(register_payload)))
                 .await
                 .unwrap();
 
@@ -313,7 +335,7 @@ mod tests {
                     hashed_pass: "password".to_string(),
                 })),
             };
-            let login_res = AuthController::post_login(state.clone(), Ok(Json(login_payload)))
+            let login_res = auth_controller::post_login(state.clone(), Ok(Json(login_payload)))
                 .await
                 .unwrap();
 
@@ -325,7 +347,7 @@ mod tests {
 
             // Refresh
             let refresh_payload = Ok(Json(RefreshPayload { refresh_token }));
-            let res = AuthController::post_refresh(state, refresh_payload)
+            let res = auth_controller::post_refresh(state, refresh_payload)
                 .await
                 .unwrap();
 
@@ -342,7 +364,7 @@ mod tests {
                 refresh_token: "invalid_token".to_string(),
             }));
 
-            let res = AuthController::post_refresh(state, refresh_payload).await;
+            let res = auth_controller::post_refresh(state, refresh_payload).await;
             assert!(res.is_err());
         }
 
@@ -362,7 +384,7 @@ mod tests {
                     hashed_pass: "password".to_string(),
                 })),
             };
-            let _ = AuthController::post_register(state.clone(), Ok(Json(register_payload)))
+            let _ = auth_controller::post_register(state.clone(), Ok(Json(register_payload)))
                 .await
                 .unwrap();
 
@@ -372,7 +394,7 @@ mod tests {
                     hashed_pass: "password".to_string(),
                 })),
             };
-            let login_res = AuthController::post_login(state.clone(), Ok(Json(login_payload)))
+            let login_res = auth_controller::post_login(state.clone(), Ok(Json(login_payload)))
                 .await
                 .unwrap();
 
@@ -386,7 +408,7 @@ mod tests {
             let refresh_payload = Ok(Json(RefreshPayload {
                 refresh_token: session_token,
             }));
-            let res = AuthController::post_refresh(state, refresh_payload).await;
+            let res = auth_controller::post_refresh(state, refresh_payload).await;
 
             assert!(res.is_err());
         }
@@ -407,7 +429,7 @@ mod tests {
                     hashed_pass: "password".to_string(),
                 })),
             };
-            let _ = AuthController::post_register(state.clone(), Ok(Json(register_payload)))
+            let _ = auth_controller::post_register(state.clone(), Ok(Json(register_payload)))
                 .await
                 .unwrap();
 
@@ -417,7 +439,7 @@ mod tests {
                     hashed_pass: "password".to_string(),
                 })),
             };
-            let login_res = AuthController::post_login(state.clone(), Ok(Json(login_payload)))
+            let login_res = auth_controller::post_login(state.clone(), Ok(Json(login_payload)))
                 .await
                 .unwrap();
 
@@ -428,7 +450,7 @@ mod tests {
             };
 
             // First refresh
-            let res1 = AuthController::post_refresh(
+            let res1 = auth_controller::post_refresh(
                 state.clone(),
                 Ok(Json(RefreshPayload {
                     refresh_token: refresh_token.clone(),
@@ -438,11 +460,9 @@ mod tests {
             assert!(res1.is_ok());
 
             // Second refresh with SAME token should fail
-            let res2 = AuthController::post_refresh(
-                state,
-                Ok(Json(RefreshPayload { refresh_token })),
-            )
-            .await;
+            let res2 =
+                auth_controller::post_refresh(state, Ok(Json(RefreshPayload { refresh_token })))
+                    .await;
             assert!(res2.is_err());
         }
     }

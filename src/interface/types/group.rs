@@ -4,7 +4,7 @@ use uuid::Uuid;
 use crate::model::models;
 
 // TODO: Don't wrap it, complete new type
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, utoipa::ToSchema)]
 pub struct Group {
     pub id: Uuid,
     pub owner_user_id: Uuid,

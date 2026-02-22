@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::{interface::types::location::NewLocation, model::models};
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, utoipa::ToSchema)]
 pub struct NewProducer {
     pub location: NewLocation,
     pub group_id: Uuid,
@@ -14,7 +14,7 @@ pub struct NewProducer {
 }
 
 // TODO: Don't wrap it, complete new type
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, utoipa::ToSchema)]
 pub struct Producer {
     pub id: Uuid,
     pub location_id: Uuid,

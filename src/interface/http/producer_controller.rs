@@ -18,9 +18,7 @@ use crate::{
     service::{auth::JWT, producer::ProducerService},
 };
 
-pub struct ProducerController {}
-
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, utoipa::ToSchema)]
 pub struct GetProducersResponse {
     pairs: Vec<(Group, Vec<Producer>)>,
 }
@@ -31,7 +29,7 @@ impl From<Vec<(Group, Vec<Producer>)>> for GetProducersResponse {
     }
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, utoipa::ToSchema)]
 pub struct GetProducerResponse {
     producer: Producer,
 }
@@ -42,12 +40,12 @@ impl From<Producer> for GetProducerResponse {
     }
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, utoipa::ToSchema)]
 pub struct PostProducerBody {
     producer: NewProducer,
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, utoipa::ToSchema)]
 pub struct PostProducerResponse {
     producer: Producer,
 }
@@ -59,38 +57,66 @@ impl From<Producer> for PostProducerResponse {
 }
 
 // TODO: Docs
-impl ProducerController {
-    pub async fn get_producers(
-        jwt: JWT,
-        State(AppState { pool }): State<AppState>,
-    ) -> Result<Json<GetProducersResponse>, HttpApiError> {
-        let p_service: ProducerService<PgProducerDao, PgLocationDao, PgGroupDao> = pool.into();
-        let producers = p_service.get_owned_producers(jwt.user_id)?;
-        Ok(Json(GetProducersResponse::from(producers)))
-    }
 
-    pub async fn get_producer_by_id(
-        jwt: JWT,
-        State(AppState { pool }): State<AppState>,
-        Path(id): Path<Uuid>,
-    ) -> Result<Json<GetProducerResponse>, HttpApiError> {
-        let user_id = jwt.user_id;
-        let producer_id = id;
-        let p_service: ProducerService<PgProducerDao, PgLocationDao, PgGroupDao> = pool.into();
-        let producer = p_service.get_producer(user_id, producer_id)?;
-        Ok(Json(GetProducerResponse::from(producer)))
-    }
+#[utoipa::path(
+    get,
+    path = "/producers",
+    tag = "producers",
+    responses((status = 200, description = "Got producers", body = GetProducerResponse)),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_producers(
+    jwt: JWT,
+    State(AppState { pool }): State<AppState>,
+) -> Result<Json<GetProducersResponse>, HttpApiError> {
+    let p_service: ProducerService<PgProducerDao, PgLocationDao, PgGroupDao> = pool.into();
+    let producers = p_service.get_owned_producers(jwt.user_id)?;
+    Ok(Json(GetProducersResponse::from(producers)))
+}
 
-    pub async fn post_producer(
-        jwt: JWT,
-        State(AppState { pool }): State<AppState>,
-        Json(body): Json<PostProducerBody>,
-    ) -> Result<Json<PostProducerResponse>, HttpApiError> {
-        let new_producer = body.producer;
-        let p_service: ProducerService<PgProducerDao, PgLocationDao, PgGroupDao> = pool.into();
-        let res = p_service.create_producer(jwt.user_id, new_producer)?;
-        Ok(Json(res.into()))
-    }
+#[utoipa::path(
+    get,
+    path = "/producers/{id}",
+    tag = "producers",
+    params(
+        ("id" = Uuid, Path, description = "The unique ID of the producer")
+    ),
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Found producer details", body = GetProducerResponse),
+    )
+)]
+pub async fn get_producer_by_id(
+    jwt: JWT,
+    State(AppState { pool }): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<GetProducerResponse>, HttpApiError> {
+    let user_id = jwt.user_id;
+    let producer_id = id;
+    let p_service: ProducerService<PgProducerDao, PgLocationDao, PgGroupDao> = pool.into();
+    let producer = p_service.get_producer(user_id, producer_id)?;
+    Ok(Json(GetProducerResponse::from(producer)))
+}
+
+#[utoipa::path(
+    post,
+    path = "/producers",
+    tag = "producers",
+    security(("bearer_auth" = [])),
+    request_body = PostProducerBody, // Tells Swagger to show a JSON editor for this struct
+    responses(
+        (status = 201, description = "Producer created successfully", body = PostProducerResponse),
+    )
+)]
+pub async fn post_producer(
+    jwt: JWT,
+    State(AppState { pool }): State<AppState>,
+    Json(body): Json<PostProducerBody>,
+) -> Result<Json<PostProducerResponse>, HttpApiError> {
+    let new_producer = body.producer;
+    let p_service: ProducerService<PgProducerDao, PgLocationDao, PgGroupDao> = pool.into();
+    let res = p_service.create_producer(jwt.user_id, new_producer)?;
+    Ok(Json(res.into()))
 }
 
 #[cfg(test)]
@@ -104,11 +130,13 @@ mod tests {
     use axum::extract::{Path, State};
 
     mod unit_test {
-        // No unit tests for ProducerController at the moment.
+        // No unit tests for producer_controller at the moment.
         // Unit tests would typically mock dependencies like ProducerService, PgProducerDao, etc.
     }
 
     mod integration_test {
+        use crate::interface::http::producer_controller;
+
         use super::*;
 
         fn mock_jwt(user_id: Uuid, login: String) -> JWT {
@@ -135,7 +163,9 @@ mod tests {
             let jwt = mock_jwt(user.id, user.login);
             let state = State(AppState { pool: ctx.pool });
 
-            let res = ProducerController::get_producers(jwt, state).await.unwrap();
+            let res = producer_controller::get_producers(jwt, state)
+                .await
+                .unwrap();
             assert_eq!(res.0.pairs.len(), 1);
             assert_eq!(res.0.pairs[0].1.len(), 1);
         }
@@ -151,7 +181,7 @@ mod tests {
             let jwt = mock_jwt(user.id, user.login);
             let state = State(AppState { pool: ctx.pool });
 
-            let res = ProducerController::get_producer_by_id(jwt, state, Path(producer.id))
+            let res = producer_controller::get_producer_by_id(jwt, state, Path(producer.id))
                 .await
                 .unwrap();
             assert_eq!(res.0.producer.id, producer.id);
@@ -165,7 +195,7 @@ mod tests {
             let state = State(AppState { pool: ctx.pool });
 
             let res =
-                ProducerController::get_producer_by_id(jwt, state, Path(Uuid::new_v4())).await;
+                producer_controller::get_producer_by_id(jwt, state, Path(Uuid::new_v4())).await;
             assert!(res.is_err());
         }
 
@@ -193,7 +223,7 @@ mod tests {
                 },
             });
 
-            let res = ProducerController::post_producer(jwt, state, body)
+            let res = producer_controller::post_producer(jwt, state, body)
                 .await
                 .unwrap();
             assert_eq!(res.0.producer.name, "New Prod");
@@ -224,7 +254,7 @@ mod tests {
                 },
             });
 
-            let res = ProducerController::post_producer(jwt, state, body).await;
+            let res = producer_controller::post_producer(jwt, state, body).await;
             assert!(res.is_err());
         }
     }

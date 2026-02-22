@@ -15,11 +15,13 @@ use serde::Serialize;
 use std::{env, net::SocketAddr, sync::Arc};
 use thiserror::Error;
 use tokio::io;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
     dao::{DbPool, MAX_DB_POOL_SIZE},
     helpers::http_app_state::AppState,
-    interface::http::{auth_controller::AuthController, producer_controller::ProducerController},
+    interface::http::docs::ApiDoc,
     service::ServiceError,
 };
 
@@ -36,6 +38,7 @@ pub enum HttpError {
 }
 
 pub mod auth_controller;
+pub mod docs;
 pub mod extractor;
 pub mod producer_controller;
 
@@ -45,30 +48,36 @@ impl Http {
     pub async fn run_http_server(addr: SocketAddr) -> Result<(), HttpError> {
         let listener = tokio::net::TcpListener::bind(addr).await?;
         log::info!("Created TcpListener on {:?}", addr);
+
         dotenv().ok();
         let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
         let manager = ConnectionManager::<PgConnection>::new(database_url.clone());
         let pool: DbPool = r2d2::Pool::builder()
-            .max_size(MAX_DB_POOL_SIZE)
+            .max_size(MAX_DB_POOL_SIZE) // Ensure this constant is in scope
             .build(manager)?;
         log::info!("Created DbPool on {}", database_url);
 
         let state = AppState { pool };
 
+        let openapi_doc = ApiDoc::openapi();
+
         let app = Router::new()
-            .route("/auth/login", post(AuthController::post_login))
-            .route("/auth/register", post(AuthController::post_register))
-            .route("/auth/refresh", post(AuthController::post_refresh))
+            .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", openapi_doc))
+            .route("/auth/login", post(auth_controller::post_login))
+            .route("/auth/register", post(auth_controller::post_register))
+            .route("/auth/refresh", post(auth_controller::post_refresh))
             .route(
                 "/producers",
-                get(ProducerController::get_producers).post(ProducerController::post_producer),
+                get(producer_controller::get_producers).post(producer_controller::post_producer),
             )
             .route(
                 "/producers/{id}",
-                get(ProducerController::get_producer_by_id),
+                get(producer_controller::get_producer_by_id),
             )
             .with_state(state);
+
         log::info!("Created HTTP Router");
+        log::info!("Swagger UI available at http://{:?}/swagger-ui", addr);
 
         axum::serve(listener, app).await.map_err(Into::into)
     }
