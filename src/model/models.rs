@@ -179,6 +179,7 @@ pub struct NewGroup {
     pub location_id: Uuid,
     pub name: String,
     pub description: String,
+    pub is_public: bool,
 }
 
 #[derive(Debug, AsChangeset)]

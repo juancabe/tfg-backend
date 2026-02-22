@@ -40,6 +40,7 @@ pub enum HttpError {
 pub mod auth_controller;
 pub mod docs;
 pub mod extractor;
+pub mod group_controller;
 pub mod producer_controller;
 
 pub struct Http {}

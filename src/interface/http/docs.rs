@@ -3,13 +3,10 @@ use utoipa::{
     Modify, OpenApi,
 };
 
-// Import your controllers and types here. 
-// Adjust these paths based on your actual module structure!
-use crate::interface::http::{auth_controller, producer_controller};
+use crate::interface::{http::{auth_controller, producer_controller}};
 use crate::interface::types::{group::Group, producer::{NewProducer, Producer}};
 use crate::helpers::users_auth::AuthMethod;
 
-/// Security modifier to add Bearer token support to Swagger UI
 pub struct SecurityAddon;
 
 impl Modify for SecurityAddon {
@@ -28,10 +25,8 @@ impl Modify for SecurityAddon {
     }
 }
 
-/// Central OpenAPI registry
 #[derive(OpenApi)]
 #[openapi(
-    // 1. Register all your endpoint functions here
     paths(
         auth_controller::post_login,
         auth_controller::post_register,
@@ -40,7 +35,6 @@ impl Modify for SecurityAddon {
         producer_controller::get_producer_by_id,
         producer_controller::post_producer,
     ),
-    // 2. Register all structs/enums used in requests or responses
     components(
         schemas(
             // Auth Schemas
@@ -51,21 +45,18 @@ impl Modify for SecurityAddon {
             auth_controller::LoginPayload,
             auth_controller::LoginResponse,
             auth_controller::CorrectLoginResponse,
-            AuthMethod, // Ensure AuthMethod derives ToSchema
+            AuthMethod,
             
-            // Producer Schemas
             producer_controller::GetProducersResponse,
             producer_controller::GetProducerResponse,
             producer_controller::PostProducerBody,
             producer_controller::PostProducerResponse,
-            Group,       // Ensure Group derives ToSchema
-            Producer,    // Ensure Producer derives ToSchema
-            NewProducer, // Ensure NewProducer derives ToSchema
+            Group,      
+            Producer,   
+            NewProducer,
         )
     ),
-    // 3. Apply the security modifier
     modifiers(&SecurityAddon),
-    // 4. Organize endpoints into categories
     tags(
         (name = "auth", description = "Authentication and authorization endpoints"),
         (name = "producers", description = "Producer management endpoints")

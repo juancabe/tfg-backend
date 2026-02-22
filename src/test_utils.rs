@@ -90,6 +90,7 @@ pub fn create_test_group(
             location_id: location_id_arg,
             name: format!("group_{}", suffix),
             description: "desc".to_string(),
+            is_public: false,
         })
         .returning(crate::model::models::Group::as_returning())
         .get_result(&mut conn)

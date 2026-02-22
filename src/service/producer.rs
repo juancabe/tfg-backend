@@ -263,6 +263,7 @@ mod tests {
                         location_id: location.id,
                         name: "public_group".to_string(),
                         description: "desc".to_string(),
+                        is_public: true,
                     })
                     .returning(crate::model::models::Group::as_returning())
                     .get_result(&mut conn)

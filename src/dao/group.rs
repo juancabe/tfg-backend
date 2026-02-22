@@ -137,6 +137,7 @@ mod tests {
                 location_id: location.id,
                 name: "Test Group".to_string(),
                 description: "Test Description".to_string(),
+                is_public: true,
             };
 
             let result = dao.create_group(new_group).expect("Failed to create group");
@@ -156,6 +157,7 @@ mod tests {
                 location_id: location.id,
                 name: "Test Group".to_string(),
                 description: "Test Description".to_string(),
+                is_public: true,
             };
 
             let result = dao.create_group(new_group);
@@ -306,6 +308,7 @@ mod tests {
                 location_id: location.id,
                 name: "Initial Name".to_string(),
                 description: "Initial Description".to_string(),
+                is_public: true,
             };
             let created = dao.create_group(new_group).unwrap();
 
@@ -342,6 +345,7 @@ mod tests {
                     location_id: location.id,
                     name: "G1".to_string(),
                     description: "D1".to_string(),
+                    is_public: true,
                 })
                 .unwrap();
 
