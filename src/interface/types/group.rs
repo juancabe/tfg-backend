@@ -36,7 +36,6 @@ impl From<models::Group> for Group {
 
 #[derive(Serialize, Deserialize, Debug, utoipa::ToSchema)]
 pub struct NewGroup {
-    pub owner_user_id: Uuid,
     pub location: NewLocation,
     pub name: String,
     pub description: String,

@@ -39,7 +39,6 @@ impl<G: GroupDao + Clone, L: LocationDao + Clone> GroupService<G, L> {
         new_group: interface::types::group::NewGroup,
     ) -> Result<Group, ServiceError> {
         let interface::types::group::NewGroup {
-            owner_user_id,
             name,
             description,
             is_public,
@@ -60,16 +59,12 @@ impl<G: GroupDao + Clone, L: LocationDao + Clone> GroupService<G, L> {
         let location = self.location_dao.create_location(location)?;
 
         let new_group = models::NewGroup {
-            owner_user_id,
+            owner_user_id: user_id,
             location_id: location.id,
             name,
             description,
             is_public,
         };
-
-        if user_id != owner_user_id {
-            Err(ServiceError::Forbidden)?
-        }
 
         self.group_dao
             .create_group(new_group)
@@ -128,7 +123,6 @@ mod tests {
             let user = create_test_user(&ctx.pool, "create_suc");
 
             let new_group_input = InterfaceNewGroup {
-                owner_user_id: user.id,
                 name: "New Group".to_string(),
                 description: "Desc".to_string(),
                 is_public: true,
@@ -145,32 +139,6 @@ mod tests {
 
             assert_eq!(result.name, "New Group");
             assert_eq!(result.owner_user_id, user.id);
-        }
-
-        #[test]
-        fn test_create_group_forbidden() {
-            let ctx = setup();
-            let group_dao = PgGroupDao::new(ctx.pool.clone());
-            let location_dao = PgLocationDao::new(ctx.pool.clone());
-            let service = GroupService::new(group_dao, location_dao);
-            let user = create_test_user(&ctx.pool, "create_forb");
-            let other_user_id = Uuid::new_v4();
-
-            let new_group_input = InterfaceNewGroup {
-                owner_user_id: other_user_id, // Trying to create for someone else
-                name: "New Group".to_string(),
-                description: "Desc".to_string(),
-                is_public: true,
-                location: InterfaceNewLocation {
-                    name: Some("Loc".to_string()),
-                    geo_lat: Some(1.0),
-                    geo_long: Some(1.0),
-                },
-            };
-
-            let result = service.create_group(user.id, new_group_input);
-
-            assert!(matches!(result, Err(ServiceError::Forbidden)));
         }
 
         #[test]
@@ -199,16 +167,19 @@ mod tests {
             let owner = create_test_user(&ctx.pool, "owner");
             let viewer = create_test_user(&ctx.pool, "viewer");
             let location = create_test_location(&ctx.pool, "pub");
-            
+
             // Create public group manually to ensure it is public
             use crate::model::models::NewGroup;
-            let group = service.group_dao.create_group(NewGroup {
-                owner_user_id: owner.id,
-                location_id: location.id,
-                name: "Public Group".to_string(),
-                description: "Desc".to_string(),
-                is_public: true,
-            }).unwrap();
+            let group = service
+                .group_dao
+                .create_group(NewGroup {
+                    owner_user_id: owner.id,
+                    location_id: location.id,
+                    name: "Public Group".to_string(),
+                    description: "Desc".to_string(),
+                    is_public: true,
+                })
+                .unwrap();
 
             let result = service
                 .get_group(viewer.id, group.id)
@@ -229,13 +200,16 @@ mod tests {
 
             // Create private group
             use crate::model::models::NewGroup;
-            let group = service.group_dao.create_group(NewGroup {
-                owner_user_id: owner.id,
-                location_id: location.id,
-                name: "Private Group".to_string(),
-                description: "Desc".to_string(),
-                is_public: false,
-            }).unwrap();
+            let group = service
+                .group_dao
+                .create_group(NewGroup {
+                    owner_user_id: owner.id,
+                    location_id: location.id,
+                    name: "Private Group".to_string(),
+                    description: "Desc".to_string(),
+                    is_public: false,
+                })
+                .unwrap();
 
             let result = service.get_group(viewer.id, group.id);
 
@@ -253,7 +227,10 @@ mod tests {
             let result = service.get_group(user.id, Uuid::new_v4());
 
             // Should be mapped to DaoError::NotFound -> ServiceError::DbError
-            assert!(matches!(result, Err(ServiceError::DbError(DaoError::NotFound))));
+            assert!(matches!(
+                result,
+                Err(ServiceError::DbError(DaoError::NotFound))
+            ));
         }
 
         #[test]
@@ -317,7 +294,10 @@ mod tests {
 
             let result = service.delete_group(user.id, Uuid::new_v4());
 
-            assert!(matches!(result, Err(ServiceError::DbError(DaoError::NotFound))));
+            assert!(matches!(
+                result,
+                Err(ServiceError::DbError(DaoError::NotFound))
+            ));
         }
     }
 }
