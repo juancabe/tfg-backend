@@ -1,14 +1,13 @@
 use crate::dao::DbPool;
 use crate::dao::group::GroupDao;
 use crate::dao::location::LocationDao;
-use crate::dao::producer::{ProducerAuthCredentials, ProducerDao};
 use crate::interface;
 use crate::interface::types::group::Group;
-use crate::interface::types::producer::Producer;
 use crate::model::models::{self};
 use crate::service::ServiceError;
 use uuid::Uuid;
 
+// TODO: unit and integration tests
 pub struct GroupService<G: GroupDao, L: LocationDao> {
     group_dao: G,
     location_dao: L,
@@ -38,79 +37,72 @@ impl<G: GroupDao + Clone, L: LocationDao + Clone> GroupService<G, L> {
     pub fn create_group(
         &self,
         user_id: Uuid,
-        new_producer: interface::types::group::NewGroup,
+        new_group: interface::types::group::NewGroup,
     ) -> Result<Group, ServiceError> {
-        todo!()
-        // {
-        //     let group = self.group_dao.get_group(new_producer.group_id)?;
-        //     if group.owner_user_id != user_id {
-        //         return Err(ServiceError::Forbidden);
-        //     }
-        // }
-        //
-        // let loc = self
-        //     .location_dao
-        //     .create_location(new_producer.location.try_into()?)?;
-        //
-        // let model_new_producer = models::NewProducer {
-        //     location_id: loc.id,
-        //     group_id: new_producer.group_id,
-        //     name: new_producer.name,
-        //     description: new_producer.description,
-        //     forwarder_id: new_producer.forwarder_id,
-        // };
-        //
-        // self.producer_dao
-        //     .create_producer(model_new_producer)
-        //     .map_err(Into::into)
-        //     .map(|p| p.into())
+        let interface::types::group::NewGroup {
+            owner_user_id,
+            name,
+            description,
+            is_public,
+            location,
+        } = new_group;
+
+        let interface::types::location::NewLocation {
+            name: loc_name,
+            geo_lat,
+            geo_long,
+        } = location;
+        let location = models::NewLocation {
+            name: loc_name,
+            geo_lat,
+            geo_long,
+        };
+
+        let location = self.location_dao.create_location(location)?;
+
+        let new_group = models::NewGroup {
+            owner_user_id,
+            location_id: location.id,
+            name,
+            description,
+            is_public,
+        };
+
+        if user_id != owner_user_id {
+            Err(ServiceError::Forbidden)?
+        }
+
+        self.group_dao
+            .create_group(new_group)
+            .map_err(Into::into)
+            .map(Into::into)
     }
 
-    /// Only returns the producer when the user has visibility permissions
+    /// Only returns the group when the user has visibility permissions
     pub fn get_group(&self, user_id: Uuid, group_id: Uuid) -> Result<Group, ServiceError> {
-        todo!()
-        // let producer = self
-        //     .producer_dao
-        //     .get_by_id(producer_id)?
-        //     .ok_or(ServiceError::NotFound)?;
-        //
-        // let group = self.group_dao.get_group(producer.group_id)?;
-        //
-        // if group.owner_user_id != user_id && !group.is_public {
-        //     Err(ServiceError::Forbidden)
-        // } else {
-        //     Ok(producer.into())
-        // }
+        let group = self.group_dao.get_group(group_id)?;
+        if !group.is_public && (group.owner_user_id != user_id) {
+            Err(ServiceError::Forbidden)?
+        }
+
+        Ok(group.into())
     }
 
-    pub fn get_groups(&self, user_id: Uuid) -> Result<Vec<(Group, Vec<Producer>)>, ServiceError> {
-        todo!()
-        // self.group_dao
-        //     .get_user_groups(user_id)?
-        //     .into_iter()
-        //     .map(|g| {
-        //         let producers = self
-        //             .producer_dao
-        //             .get_by_group_id(g.id)
-        //             .map(|v| v.into_iter().map(Producer::from).collect())
-        //             .map_err(ServiceError::from)?;
-        //         Ok((Group::from(g), producers))
-        //     })
-        //     .collect()
+    pub fn get_groups(&self, user_id: Uuid) -> Result<Vec<Group>, ServiceError> {
+        Ok(self
+            .group_dao
+            .get_user_groups(user_id)?
+            .into_iter()
+            .map(|g| g.into())
+            .collect())
     }
 
     pub fn delete_group(&self, user_id: Uuid, group_id: Uuid) -> Result<(), ServiceError> {
-        todo!()
-        // let producer = self
-        //     .producer_dao
-        //     .get_by_id(producer_id)?
-        //     .ok_or(ServiceError::NotFound)?;
-        // let group = self.group_dao.get_group(producer.group_id)?;
-        // if user_id != group.owner_user_id {
-        //     Err(ServiceError::Forbidden)?;
-        // }
-        //
-        // self.producer_dao.delete(producer_id)?;
-        // Ok(())
+        let group = self.group_dao.get_group(group_id)?;
+        if group.owner_user_id != user_id {
+            Err(ServiceError::Forbidden)?
+        }
+
+        self.group_dao.delete_group(group_id).map_err(Into::into)
     }
 }

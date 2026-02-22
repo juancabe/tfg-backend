@@ -15,8 +15,9 @@ pub enum GroupRole {
 
 pub trait GroupDao {
     fn create_group(&self, new_group: NewGroup) -> Result<Group, DaoError>;
-    fn update_group(&self, group_id: Uuid, update: GroupUpdate) -> Result<Group, DaoError>;
     fn get_group(&self, group_id: Uuid) -> Result<Group, DaoError>;
+    fn update_group(&self, group_id: Uuid, update: GroupUpdate) -> Result<Group, DaoError>;
+    fn delete_group(&self, group_id: Uuid) -> Result<(), DaoError>;
     fn get_user_groups(&self, user_id: Uuid) -> Result<Vec<Group>, DaoError>;
     fn toggle_favorite_group(&self, user_id_in: Uuid, group_id_in: Uuid) -> Result<bool, DaoError>;
 }
@@ -57,6 +58,20 @@ impl GroupDao for PgGroupDao {
             .returning(Group::as_returning())
             .get_result(conn)
             .map_err(Into::into)
+    }
+
+    // TODO: tests
+    fn delete_group(&self, group_id_in: Uuid) -> Result<(), DaoError> {
+        use crate::model::schema::groups::dsl::*;
+        let conn = &mut self.pool.get()?;
+        let rows = diesel::delete(groups.find(group_id_in)).execute(conn)?;
+        match rows {
+            1 => Ok(()),
+            0 => Err(DaoError::NotFound),
+            _ => Err(DaoError::OtherRare(format!(
+                "group_id_in delete affected rows: {rows}"
+            ))),
+        }
     }
 
     fn get_group(&self, group_id: Uuid) -> Result<Group, DaoError> {

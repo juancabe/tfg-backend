@@ -194,13 +194,17 @@ impl ProducerDao for PgProducerDao {
         }
     }
 
+    // TODO: test failure
     fn delete(&self, producer_id: Uuid) -> Result<(), DaoError> {
         use crate::model::schema::producers::dsl::*;
         let conn = &mut self.pool.get()?;
-        diesel::delete(producers.find(producer_id))
-            .execute(conn)
-            .map(|_| ())
-            .map_err(Into::into)
+        match diesel::delete(producers.find(producer_id)).execute(conn)? {
+            1 => Ok(()),
+            0 => Err(DaoError::NotFound),
+            rows => Err(DaoError::OtherRare(format!(
+                "group_id_in delete affected rows: {rows}"
+            ))),
+        }
     }
 }
 
@@ -441,14 +445,18 @@ mod tests {
                 .expect("Create failed");
 
             // 3. Update group
-            dao.update_group(producer.id, group2.id).expect("Update group failed");
+            dao.update_group(producer.id, group2.id)
+                .expect("Update group failed");
 
             // 4. Set auth
             let key = "base64key".to_string();
-            dao.set_internet_auth(producer.id, key.clone()).expect("Set auth failed");
+            dao.set_internet_auth(producer.id, key.clone())
+                .expect("Set auth failed");
 
             // 5. Verify credentials and state
-            let creds = dao.get_auth_credentials(producer.id).expect("Get creds failed");
+            let creds = dao
+                .get_auth_credentials(producer.id)
+                .expect("Get creds failed");
             match creds {
                 ProducerAuthCredentials::Internet(auth) => {
                     assert_eq!(auth.x25519_pub_key_bytes_base64, key);
@@ -456,7 +464,10 @@ mod tests {
                 _ => panic!("Expected Internet auth"),
             }
 
-            let updated = dao.get_by_id(producer.id).expect("Get producer failed").unwrap();
+            let updated = dao
+                .get_by_id(producer.id)
+                .expect("Get producer failed")
+                .unwrap();
             assert_eq!(updated.group_id, group2.id);
 
             // 6. Delete
