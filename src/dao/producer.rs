@@ -231,6 +231,7 @@ mod tests {
                 location_id: location.id,
                 group_id: group.id,
                 name: "test_producer".to_string(),
+                ble_name: "ble_test_producer".to_string(),
                 description: "A test producer".to_string(),
                 forwarder_id: None,
             };
@@ -253,6 +254,7 @@ mod tests {
                 location_id: location.id,
                 group_id: Uuid::new_v4(), // Invalid group ID
                 name: "test_producer_invalid".to_string(),
+                ble_name: "ble_test_producer_invalid".to_string(),
                 description: "Invalid group".to_string(),
                 forwarder_id: None,
             };
@@ -421,9 +423,9 @@ mod tests {
         fn test_update_last_seen_not_found() {
             let ctx = setup();
             let dao = PgProducerDao::new(ctx.pool.clone());
-            
+
             let result = dao.update_last_seen(Uuid::new_v4());
-            
+
             // update_last_seen uses update_expect_eq which uses returning, if no row found, it's NotFound
             // Diesel returns NotFound if 0 rows updated when using get_result
             assert!(matches!(result, Err(DaoError::NotFound)));
@@ -438,7 +440,7 @@ mod tests {
             let group = create_test_group(&ctx.pool, user.id, location.id, "ugnf_grp");
 
             let result = dao.update_group(Uuid::new_v4(), group.id);
-            
+
             assert!(matches!(result, Err(DaoError::NotFound)));
         }
 
@@ -446,9 +448,9 @@ mod tests {
         fn test_set_forwarder_not_found() {
             let ctx = setup();
             let dao = PgProducerDao::new(ctx.pool.clone());
-            
+
             let result = dao.set_forwarder(Uuid::new_v4(), Uuid::new_v4());
-            
+
             assert!(matches!(result, Err(DaoError::NotFound)));
         }
 
@@ -456,10 +458,10 @@ mod tests {
         fn test_set_internet_auth_not_found() {
             let ctx = setup();
             let dao = PgProducerDao::new(ctx.pool.clone());
-            
+
             // This is an INSERT. If producer_id doesn't exist, it should be a ForeignKeyViolation
             let result = dao.set_internet_auth(Uuid::new_v4(), "key".to_string());
-            
+
             assert!(matches!(result, Err(DaoError::ForeignKeyViolation(_))));
         }
 
@@ -467,9 +469,9 @@ mod tests {
         fn test_delete_not_found() {
             let ctx = setup();
             let dao = PgProducerDao::new(ctx.pool.clone());
-            
+
             let result = dao.delete(Uuid::new_v4());
-            
+
             assert!(matches!(result, Err(DaoError::NotFound)));
         }
     }
@@ -494,6 +496,7 @@ mod tests {
                     location_id: location.id,
                     group_id: group1.id,
                     name: "lifecycle_prod".to_string(),
+                    ble_name: "ble_lifecycle_prod".to_string(),
                     description: "desc".to_string(),
                     forwarder_id: None,
                 })

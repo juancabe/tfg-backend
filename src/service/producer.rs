@@ -60,6 +60,7 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> Produc
             location_id: loc.id,
             group_id: new_producer.group_id,
             name: new_producer.name,
+            ble_name: new_producer.ble_name,
             description: new_producer.description,
             forwarder_id: new_producer.forwarder_id,
         };
@@ -177,6 +178,7 @@ mod tests {
                 },
                 group_id: group.id,
                 name: "New Prod".to_string(),
+                ble_name: "BLE_New Prod".to_string(),
                 description: "Desc".to_string(),
                 forwarder_id: None,
             };
@@ -204,6 +206,7 @@ mod tests {
                 },
                 group_id: group.id,
                 name: "New Prod".to_string(),
+                ble_name: "BLE_New Prod".to_string(),
                 description: "Desc".to_string(),
                 forwarder_id: None,
             };
@@ -225,6 +228,7 @@ mod tests {
                 },
                 group_id: Uuid::new_v4(),
                 name: "New Prod".to_string(),
+                ble_name: "BLE_New Prod".to_string(),
                 description: "Desc".to_string(),
                 forwarder_id: None,
             };
@@ -397,6 +401,7 @@ mod tests {
                 },
                 group_id: group.id,
                 name: "Lifecycle Prod".to_string(),
+                ble_name: "BLE_Lifecycle Prod".to_string(),
                 description: "Desc".to_string(),
                 forwarder_id: None,
             };

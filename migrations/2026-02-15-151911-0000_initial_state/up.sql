@@ -83,6 +83,7 @@ CREATE TABLE producers (
     location_id UUID NOT NULL REFERENCES locations(id),
     group_id UUID NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
+    ble_name TEXT NOT NULL,
     description TEXT NOT NULL,
     last_seen TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

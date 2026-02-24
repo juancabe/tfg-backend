@@ -100,6 +100,7 @@ diesel::table! {
         location_id -> Uuid,
         group_id -> Uuid,
         name -> Text,
+        ble_name -> Text,
         description -> Text,
         last_seen -> Timestamptz,
         created_at -> Timestamptz,

@@ -111,6 +111,7 @@ pub fn create_test_producer(
             location_id: location_id_in,
             group_id: group_id_in,
             name: format!("producer_{}", suffix),
+            ble_name: format!("BLE_producer_{}", suffix),
             description: "desc".to_string(),
             forwarder_id: None,
         })

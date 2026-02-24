@@ -222,6 +222,7 @@ pub struct Producer {
     pub location_id: Uuid,
     pub group_id: Uuid,
     pub name: String,
+    pub ble_name: String,
     pub description: String,
     pub last_seen: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
@@ -235,6 +236,7 @@ pub struct NewProducer {
     pub location_id: Uuid,
     pub group_id: Uuid,
     pub name: String,
+    pub ble_name: String,
     pub description: String,
     pub forwarder_id: Option<Uuid>,
 }
