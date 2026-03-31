@@ -1,6 +1,7 @@
 use axum::{
     Json,
     extract::{Path, State},
+    http::StatusCode,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -89,8 +90,8 @@ pub async fn post_group(
     jwt: JWT,
     State(AppState { pool }): State<AppState>,
     Json(body): Json<PostGroupBody>,
-) -> Result<Json<PostGroupResponse>, HttpApiError> {
+) -> Result<(StatusCode, Json<PostGroupResponse>), HttpApiError> {
     let g_service: GroupService<PgGroupDao, PgLocationDao> = pool.into();
     let group = g_service.create_group(jwt.user_id, body.group)?;
-    Ok(Json(PostGroupResponse { group }))
+    Ok((StatusCode::CREATED, Json(PostGroupResponse { group })))
 }

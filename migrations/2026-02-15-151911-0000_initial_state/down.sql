@@ -4,7 +4,6 @@ DROP TABLE IF EXISTS packet_templates;
 DROP TABLE IF EXISTS commands;
 DROP TABLE IF EXISTS mqtt_broker_auths;
 DROP TABLE IF EXISTS internet_auths;
-DROP TABLE IF EXISTS producers_for_groups;
 DROP TABLE IF EXISTS favorite_producers;
 DROP TABLE IF EXISTS producers;
 DROP TABLE IF EXISTS favorite_groups;

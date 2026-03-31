@@ -1,5 +1,5 @@
 mod jwt;
-pub use jwt::{JWT, JWTKind};
+pub use jwt::{JWTKind, JWT};
 
 use crate::helpers::users_auth::{AuthMethod, EmailPass};
 use crate::interface::http::auth_controller::{LoginPayload, RegisterPayload, RegisterResponse};
@@ -61,7 +61,7 @@ impl<D: IdentityDao> AuthService<D> {
     /// authentication by the user on other endpoints
     ///
     /// # TODO
-    /// TODO: Right now, for [`EmailPass`] _auth_ it doesn't check wether the email is veified
+    /// TODO: Right now, for [`EmailPass`] _auth_ it doesn't check whether the email is verified
     pub fn authenticate_user(&self, input: LoginInput) -> Result<Option<TokenPair>, ServiceError> {
         match input.auth_method {
             AuthMethod::EmailPass(email_pass) => {
@@ -252,8 +252,8 @@ impl<D: IdentityDao> AuthService<D> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dao::DaoError;
     use crate::dao::identity::PgIdentityDao;
+    use crate::dao::DaoError;
     use crate::helpers::users_auth::{EmailPass, EmailPassConfirmation, EmailPassFields};
     use crate::test_utils::setup;
 

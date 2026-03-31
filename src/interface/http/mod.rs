@@ -27,7 +27,7 @@ pub const DEFAULT_PORT: u16 = 8080;
 
 #[derive(Debug, Error)]
 pub enum HttpError {
-    #[error("Initialization error occured")]
+    #[error("Initialization error occurred")]
     InitError(String),
     #[error("Tokio IO error")]
     TokioIOError(#[from] io::Error),

@@ -1,6 +1,7 @@
 use axum::{
     Json,
     extract::{Path, State},
+    http::StatusCode,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -112,11 +113,11 @@ pub async fn post_producer(
     jwt: JWT,
     State(AppState { pool }): State<AppState>,
     Json(body): Json<PostProducerBody>,
-) -> Result<Json<PostProducerResponse>, HttpApiError> {
+) -> Result<(StatusCode, Json<PostProducerResponse>), HttpApiError> {
     let new_producer = body.producer;
     let p_service: ProducerService<PgProducerDao, PgLocationDao, PgGroupDao> = pool.into();
     let res = p_service.create_producer(jwt.user_id, new_producer)?;
-    Ok(Json(res.into()))
+    Ok((StatusCode::CREATED, Json(res.into())))
 }
 
 #[cfg(test)]
@@ -227,7 +228,8 @@ mod tests {
             let res = producer_controller::post_producer(jwt, state, body)
                 .await
                 .unwrap();
-            assert_eq!(res.0.producer.name, "New Prod");
+            assert_eq!(res.0, StatusCode::CREATED);
+            assert_eq!(res.1.0.producer.name, "New Prod");
         }
 
         #[tokio::test]
