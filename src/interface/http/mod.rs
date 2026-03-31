@@ -9,17 +9,15 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use diesel::{PgConnection, r2d2::ConnectionManager};
-use dotenvy::dotenv;
 use serde::Serialize;
-use std::{env, net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc};
 use thiserror::Error;
 use tokio::io;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
-    dao::{DbPool, MAX_DB_POOL_SIZE},
+    dao::DbPool,
     helpers::http_app_state::AppState,
     interface::http::docs::ApiDoc,
     service::ServiceError,
@@ -46,17 +44,9 @@ pub mod producer_controller;
 pub struct Http {}
 
 impl Http {
-    pub async fn run_http_server(addr: SocketAddr) -> Result<(), HttpError> {
+    pub async fn run_http_server(addr: SocketAddr, pool: DbPool) -> Result<(), HttpError> {
         let listener = tokio::net::TcpListener::bind(addr).await?;
         log::info!("Created TcpListener on {:?}", addr);
-
-        dotenv().ok();
-        let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-        let manager = ConnectionManager::<PgConnection>::new(database_url.clone());
-        let pool: DbPool = r2d2::Pool::builder()
-            .max_size(MAX_DB_POOL_SIZE) // Ensure this constant is in scope
-            .build(manager)?;
-        log::info!("Created DbPool on {}", database_url);
 
         let state = AppState { pool };
 
