@@ -36,7 +36,7 @@ impl TryFrom<MqttError> for v5::PublishAck {
 }
 
 /// Runtime configuration for the embedded MQTT broker.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct MqttBrokerConfig {
     /// Network interface/address where the broker listens.
     pub bind_host: String,
@@ -137,21 +137,24 @@ impl MqttBroker {
                             }
                         }
                     })
-                    .publish(fn_factory_with_config(move |session: v5::Session<ProducerIdentity>| {
-                        let ingest = ingest.clone();
+                    .publish(fn_factory_with_config(
+                        move |session: v5::Session<ProducerIdentity>| {
+                            let ingest = ingest.clone();
 
-                        async move {
-                            Ok::<_, MqttError>(fn_service(move |publish: v5::Publish| {
-                                let ingest = ingest.clone();
-                                let session = session.clone();
+                            async move {
+                                Ok::<_, MqttError>(fn_service(move |publish: v5::Publish| {
+                                    let ingest = ingest.clone();
+                                    let session = session.clone();
 
-                                async move {
-                                    let ack = ingest.handle_publish(session.state(), publish).await;
-                                    Ok::<_, MqttError>(ack)
-                                }
-                            }))
-                        }
-                    }))
+                                    async move {
+                                        let ack =
+                                            ingest.handle_publish(session.state(), publish).await;
+                                        Ok::<_, MqttError>(ack)
+                                    }
+                                }))
+                            }
+                        },
+                    ))
                 }
             })?
             .workers(config.workers)

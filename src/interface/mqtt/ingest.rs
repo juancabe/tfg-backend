@@ -4,6 +4,8 @@ use crate::dao::DbPool;
 
 use super::auth::{MqttAuthService, ProducerIdentity};
 
+pub const MAX_PAYLOAD_BYTES: usize = 4096;
+
 /// Ingest service for accepted MQTT publishes.
 ///
 /// This type is the integration point where publish payloads can later be
@@ -35,6 +37,17 @@ impl MqttIngestService {
 
         if !MqttAuthService::authorize_publish(identity, publish_topic) {
             return publish.ack().reason_code(PublishAckReason::NotAuthorized);
+        }
+
+        if publish.payload_size() > MAX_PAYLOAD_BYTES {
+            log::warn!(
+                "MQTT payload too large producer_id={}, topic={}",
+                identity.producer_id,
+                publish_topic
+            );
+            return publish
+                .ack()
+                .reason_code(PublishAckReason::PayloadFormatInvalid);
         }
 
         match publish.read_all().await {

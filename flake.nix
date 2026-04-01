@@ -17,25 +17,9 @@
 
         pgPackage = pkgs.postgresql_16;
 
-        pgSetupScript = pkgs.writeShellScriptBin "setup-postgres" ''
-          export PGDATA="''${PGDATA:-$PWD/.nix-pg/data}"
-          export PGHOST="''${PGHOST:-$PWD/.nix-pg/run}"
-          export PGLOG="''${PGLOG:-$PWD/.nix-pg/postgres.log}"
-
-          mkdir -p "$PGHOST"
-
-          if [ ! -d "$PGDATA" ]; then
-            ${pgPackage}/bin/initdb -D "$PGDATA" --no-locale --encoding=UTF8 --auth=trust -U postgres > /dev/null
-          fi
-
-          if ! ${pgPackage}/bin/pg_ctl status -D "$PGDATA" > /dev/null 2>&1; then
-             ${pgPackage}/bin/pg_ctl start -D "$PGDATA" -l "$PGLOG" -o "-k $PGHOST"
-             until ${pgPackage}/bin/pg_isready -h "$PGHOST"; do sleep 1; done
-             if ! ${pgPackage}/bin/psql -h "$PGHOST" -U postgres -lqt | cut -d \| -f 1 | grep -qw "postgres"; then
-               ${pgPackage}/bin/createdb -h "$PGHOST" -U postgres postgres
-             fi
-          fi
-        '';
+        pgSetupScript = import ./nix/postgres-setup-script.nix {
+          inherit pkgs pgPackage;
+        };
 
         rustApp = pkgs.rustPlatform.buildRustPackage {
           pname = "backend";
@@ -51,14 +35,13 @@
           '';
         };
 
-        devShell = import ./nix/dev.nix { 
-          inherit pkgs pgPackage; 
+        devShell = import ./nix/dev.nix {
+          inherit pkgs pgPackage pgSetupScript;
         };
       in
       {
         packages = {
           default = rustApp;
-          setup-postgres = pgSetupScript;
         };
 
         devShells.default = devShell;

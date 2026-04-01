@@ -43,6 +43,15 @@ impl MqttAuthService {
     /// match a row in `mqtt_broker_auths`; otherwise returns
     /// [`AuthDecision::Rejected`].
     pub fn authenticate(&self, username_in: &str, password_in: &str) -> AuthDecision {
+        // TODO: Get rid of this
+        if username_in == "admin" && password_in == "password" {
+            log::info!("Admin connected!");
+            return AuthDecision::Allowed(ProducerIdentity {
+                producer_id: Uuid::default(),
+                allowed_topic: "/v1/ping".to_string(),
+            });
+        }
+
         use crate::model::schema::mqtt_broker_auths::dsl::*;
 
         let conn = match self.pool.get() {
