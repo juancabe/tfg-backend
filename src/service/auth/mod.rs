@@ -1,5 +1,5 @@
 mod jwt;
-pub use jwt::{JWTKind, JWT};
+pub use jwt::{JWT, JWTKind};
 
 use crate::helpers::users_auth::{AuthMethod, EmailPass};
 use crate::interface::http::auth_controller::{LoginPayload, RegisterPayload, RegisterResponse};
@@ -252,8 +252,8 @@ impl<D: IdentityDao> AuthService<D> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dao::identity::PgIdentityDao;
     use crate::dao::DaoError;
+    use crate::dao::identity::PgIdentityDao;
     use crate::helpers::users_auth::{EmailPass, EmailPassConfirmation, EmailPassFields};
     use crate::test_utils::setup;
 

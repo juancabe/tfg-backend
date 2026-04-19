@@ -60,6 +60,15 @@ pub enum FieldUnit {
     Other = 6, // Uses the separate string payload column
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[repr(i16)]
+pub enum PendingProducerRegistrationStatus {
+    Pending = 1,
+    Confirmed = 2,
+    Expired = 3,
+    Cancelled = 4,
+}
+
 // =========================================================================
 //  USERS & AUTH
 // =========================================================================
@@ -275,8 +284,9 @@ pub struct MqttBrokerAuth {
     pub broker_host: String,
     pub broker_port: i16,
     pub username: String,
-    pub password: String,
+    pub password_hash: String,
     pub topic: String,
+    pub subscribe_topic: String,
 }
 
 #[derive(Debug, Insertable, AsChangeset)]
@@ -286,8 +296,78 @@ pub struct NewMqttBrokerAuth {
     pub broker_host: String,
     pub broker_port: i16,
     pub username: String,
-    pub password: String,
+    pub password_hash: String,
     pub topic: String,
+    pub subscribe_topic: String,
+}
+
+#[derive(Debug, Queryable, Selectable, Identifiable, Serialize, Deserialize)]
+#[diesel(table_name = pending_producer_registrations)]
+pub struct PendingProducerRegistration {
+    pub id: Uuid,
+    pub owner_user_id: Uuid,
+    pub group_id: Uuid,
+    pub producer_id: Option<Uuid>,
+    pub status: i16,
+    pub expires_at: DateTime<Utc>,
+    pub confirmed_at: Option<DateTime<Utc>>,
+    pub cancelled_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub producer_name: String,
+    pub ble_name: String,
+    pub description: String,
+    pub location_name: Option<String>,
+    pub location_geo_lat: Option<f64>,
+    pub location_geo_long: Option<f64>,
+    pub forwarder_id: Option<Uuid>,
+    pub data_template_id: Option<Uuid>,
+    pub mqtt_username: String,
+    pub mqtt_password_hash: String,
+    pub mqtt_topic: String,
+    pub mqtt_subscribe_topic: String,
+    pub broker_host: String,
+    pub broker_port: i16,
+    pub x25519_pub_key_bytes_base64: Option<String>,
+    pub lora_addr: Option<i32>,
+}
+
+#[derive(Debug, Insertable)]
+#[diesel(table_name = pending_producer_registrations)]
+pub struct NewPendingProducerRegistration {
+    pub owner_user_id: Uuid,
+    pub group_id: Uuid,
+    pub producer_id: Option<Uuid>,
+    pub status: i16,
+    pub expires_at: DateTime<Utc>,
+    pub confirmed_at: Option<DateTime<Utc>>,
+    pub cancelled_at: Option<DateTime<Utc>>,
+    pub producer_name: String,
+    pub ble_name: String,
+    pub description: String,
+    pub location_name: Option<String>,
+    pub location_geo_lat: Option<f64>,
+    pub location_geo_long: Option<f64>,
+    pub forwarder_id: Option<Uuid>,
+    pub data_template_id: Option<Uuid>,
+    pub mqtt_username: String,
+    pub mqtt_password_hash: String,
+    pub mqtt_topic: String,
+    pub mqtt_subscribe_topic: String,
+    pub broker_host: String,
+    pub broker_port: i16,
+    pub x25519_pub_key_bytes_base64: Option<String>,
+    pub lora_addr: Option<i32>,
+}
+
+#[derive(Debug, AsChangeset)]
+#[diesel(table_name = pending_producer_registrations)]
+pub struct PendingProducerRegistrationUpdate {
+    pub producer_id: Option<Uuid>,
+    pub status: Option<i16>,
+    pub confirmed_at: Option<DateTime<Utc>>,
+    pub cancelled_at: Option<DateTime<Utc>>,
+    pub x25519_pub_key_bytes_base64: Option<String>,
+    pub lora_addr: Option<i32>,
 }
 
 #[derive(Debug, Insertable, Serialize, Deserialize)]

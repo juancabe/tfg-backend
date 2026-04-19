@@ -6,6 +6,11 @@ use uuid::Uuid;
 
 pub trait LocationDao {
     fn create_location(&self, new_location: NewLocation) -> Result<Location, DaoError>;
+    fn create_location_with_conn(
+        &self,
+        conn: &mut diesel::PgConnection,
+        new_location: NewLocation,
+    ) -> Result<Location, DaoError>;
     fn get_location(&self, id: Uuid) -> Result<Location, DaoError>;
     fn delete_location(&self, id: Uuid) -> Result<(), DaoError>;
 }
@@ -31,6 +36,19 @@ impl LocationDao for PgLocationDao {
     fn create_location(&self, new_loc: NewLocation) -> Result<Location, DaoError> {
         use crate::model::schema::locations::dsl::*;
         let conn = &mut self.pool.get()?;
+        diesel::insert_into(locations)
+            .values(&new_loc)
+            .returning(Location::as_returning())
+            .get_result(conn)
+            .map_err(Into::into)
+    }
+
+    fn create_location_with_conn(
+        &self,
+        conn: &mut diesel::PgConnection,
+        new_loc: NewLocation,
+    ) -> Result<Location, DaoError> {
+        use crate::model::schema::locations::dsl::*;
         diesel::insert_into(locations)
             .values(&new_loc)
             .returning(Location::as_returning())
@@ -113,7 +131,8 @@ mod tests {
             let dao = PgLocationDao::new(ctx.pool.clone());
             let loc = create_test_location(&ctx.pool, "delete_test");
 
-            dao.delete_location(loc.id).expect("Failed to delete location");
+            dao.delete_location(loc.id)
+                .expect("Failed to delete location");
 
             let result = dao.get_location(loc.id);
             assert!(matches!(result, Err(DaoError::NotFound)));

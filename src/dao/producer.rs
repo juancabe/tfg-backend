@@ -1,5 +1,8 @@
 use crate::dao::{DaoError, DbPool};
-use crate::model::models::{InternetAuth, MqttBrokerAuth, NewInternetAuth, NewProducer, Producer};
+use crate::model::models::{
+    InternetAuth, MqttBrokerAuth, NewInternetAuth, NewMqttBrokerAuth, NewProducer, Producer,
+    ProducerUpdate,
+};
 use chrono::{SubsecRound, Utc};
 use diesel::prelude::*;
 use uuid::Uuid;
@@ -19,16 +22,39 @@ pub trait ProducerDao {
     fn update_last_seen(&self, id: Uuid) -> Result<(), DaoError>;
 
     fn update_group(&self, producer_id_in: Uuid, group_id_in: Uuid) -> Result<(), DaoError>;
+    fn update_metadata(
+        &self,
+        producer_id_in: Uuid,
+        update: ProducerUpdate,
+    ) -> Result<Producer, DaoError>;
 
     fn set_forwarder(&self, producer_id: Uuid, forwarder_id: Uuid) -> Result<(), DaoError>;
 
     fn set_internet_auth(&self, producer_id: Uuid, key_b64: String) -> Result<(), DaoError>;
     // Using a tuple or a struct for creds here for simplicity
-    fn set_mqtt_auth(
+    fn set_mqtt_auth(&self, producer_id: Uuid, creds: NewMqttBrokerAuth) -> Result<(), DaoError>;
+
+    fn create_producer_with_conn(
         &self,
+        conn: &mut diesel::PgConnection,
+        new_producer: NewProducer,
+    ) -> Result<Producer, DaoError>;
+
+    fn set_internet_auth_with_conn(
+        &self,
+        conn: &mut diesel::PgConnection,
         producer_id: Uuid,
-        creds: (String, i16, String, String, String),
+        key_b64: String,
     ) -> Result<(), DaoError>;
+
+    fn set_mqtt_auth_with_conn(
+        &self,
+        conn: &mut diesel::PgConnection,
+        producer_id: Uuid,
+        creds: NewMqttBrokerAuth,
+    ) -> Result<(), DaoError>;
+
+    fn pool_clone(&self) -> DbPool;
 
     fn get_auth_credentials(&self, producer_id: Uuid) -> Result<ProducerAuthCredentials, DaoError>;
     fn delete(&self, id: Uuid) -> Result<(), DaoError>;
@@ -48,6 +74,10 @@ impl From<DbPool> for PgProducerDao {
 impl PgProducerDao {
     pub fn new(pool: DbPool) -> Self {
         Self { pool }
+    }
+
+    pub fn pool_clone(&self) -> DbPool {
+        self.pool.clone()
     }
 }
 
@@ -110,6 +140,21 @@ impl ProducerDao for PgProducerDao {
             .and_then(|r| DaoError::update_expect_eq(&r.group_id, &group_id_in, "set_group_id"))
     }
 
+    fn update_metadata(
+        &self,
+        producer_id_in: Uuid,
+        update: ProducerUpdate,
+    ) -> Result<Producer, DaoError> {
+        use crate::model::schema::producers::dsl::*;
+        let conn = &mut self.pool.get()?;
+
+        diesel::update(producers.find(producer_id_in))
+            .set(update)
+            .returning(Producer::as_returning())
+            .get_result(conn)
+            .map_err(Into::into)
+    }
+
     fn set_forwarder(&self, producer_id: Uuid, forwarder_id_in: Uuid) -> Result<(), DaoError> {
         use crate::model::schema::producers::dsl::*;
         let conn = &mut self.pool.get()?;
@@ -139,24 +184,78 @@ impl ProducerDao for PgProducerDao {
 
     fn set_mqtt_auth(
         &self,
-        _producer_id_in: Uuid,
-        _creds: (String, i16, String, String, String),
+        producer_id_in: Uuid,
+        creds: NewMqttBrokerAuth,
     ) -> Result<(), DaoError> {
-        todo!()
-        // use crate::schema::mqtt_broker_auths::dsl::*;
-        // let conn = &mut self.pool.get()?;
-        // diesel::insert_into(mqtt_broker_auths)
-        //     .values(&NewMqttBrokerAuth {
-        //         producer_id: producer_id_in,
-        //         broker_host: todo!(),
-        //         broker_port: todo!(),
-        //         username: todo!(),
-        //         password: todo!(),
-        //         topic: todo!(),
-        //     })
-        //     .execute(conn)
-        //     .map_err(Into::into)
-        //     .map(|_| ())
+        use crate::model::schema::mqtt_broker_auths::dsl::*;
+        let conn = &mut self.pool.get()?;
+
+        if producer_id_in != creds.producer_id {
+            return Err(DaoError::OtherRare(
+                "set_mqtt_auth called with mismatched producer id".to_string(),
+            ));
+        }
+
+        diesel::insert_into(mqtt_broker_auths)
+            .values(&creds)
+            .execute(conn)
+            .map_err(Into::into)
+            .map(|_| ())
+    }
+
+    fn create_producer_with_conn(
+        &self,
+        conn: &mut diesel::PgConnection,
+        new_producer: NewProducer,
+    ) -> Result<Producer, DaoError> {
+        use crate::model::schema::producers::dsl::*;
+        diesel::insert_into(producers)
+            .values(&new_producer)
+            .returning(Producer::as_returning())
+            .get_result(conn)
+            .map_err(Into::into)
+    }
+
+    fn set_internet_auth_with_conn(
+        &self,
+        conn: &mut diesel::PgConnection,
+        producer_id_in: Uuid,
+        key_b64: String,
+    ) -> Result<(), DaoError> {
+        use crate::model::schema::internet_auths::dsl::*;
+        diesel::insert_into(internet_auths)
+            .values(&NewInternetAuth {
+                producer_id: producer_id_in,
+                x25519_pub_key_bytes_base64: key_b64,
+            })
+            .execute(conn)
+            .map_err(Into::into)
+            .map(|_| ())
+    }
+
+    fn set_mqtt_auth_with_conn(
+        &self,
+        conn: &mut diesel::PgConnection,
+        producer_id_in: Uuid,
+        creds: NewMqttBrokerAuth,
+    ) -> Result<(), DaoError> {
+        use crate::model::schema::mqtt_broker_auths::dsl::*;
+
+        if producer_id_in != creds.producer_id {
+            return Err(DaoError::OtherRare(
+                "set_mqtt_auth called with mismatched producer id".to_string(),
+            ));
+        }
+
+        diesel::insert_into(mqtt_broker_auths)
+            .values(&creds)
+            .execute(conn)
+            .map_err(Into::into)
+            .map(|_| ())
+    }
+
+    fn pool_clone(&self) -> DbPool {
+        self.pool.clone()
     }
 
     fn get_auth_credentials(

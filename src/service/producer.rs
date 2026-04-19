@@ -5,9 +5,35 @@ use crate::dao::producer::{ProducerAuthCredentials, ProducerDao};
 use crate::interface;
 use crate::interface::types::group::Group;
 use crate::interface::types::producer::Producer;
-use crate::model::models::{self};
+use crate::model::models::{self, ProducerUpdate};
 use crate::service::ServiceError;
 use uuid::Uuid;
+
+const MAX_FIRMWARE_NAME_LEN: usize = 32;
+
+fn contains_mqtt_topic_meta(v: &str) -> bool {
+    v.contains('/') || v.contains('+') || v.contains('#')
+}
+
+fn validate_firmware_compatible_name(name: &str, field_name: &str) -> Result<(), ServiceError> {
+    if name.is_empty() || name.len() > MAX_FIRMWARE_NAME_LEN {
+        return Err(ServiceError::TypeError(
+            crate::interface::types::TypeError::Validation(format!(
+                "{field_name} must be 1..={MAX_FIRMWARE_NAME_LEN} characters"
+            )),
+        ));
+    }
+
+    if contains_mqtt_topic_meta(name) {
+        return Err(ServiceError::TypeError(
+            crate::interface::types::TypeError::Validation(format!(
+                "{field_name} cannot include '/', '+' or '#'"
+            )),
+        ));
+    }
+
+    Ok(())
+}
 
 pub struct ProducerService<P: ProducerDao, L: LocationDao, G: GroupDao> {
     producer_dao: P,
@@ -45,6 +71,9 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> Produc
         user_id: Uuid,
         new_producer: interface::types::producer::NewProducer,
     ) -> Result<Producer, ServiceError> {
+        validate_firmware_compatible_name(&new_producer.name, "name")?;
+        validate_firmware_compatible_name(&new_producer.ble_name, "ble_name")?;
+
         {
             let group = self.group_dao.get_group(new_producer.group_id)?;
             if group.owner_user_id != user_id {
@@ -117,6 +146,58 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> Produc
 
         self.producer_dao.delete(producer_id)?;
         Ok(())
+    }
+
+    pub fn update_producer(
+        &self,
+        user_id: Uuid,
+        producer_id: Uuid,
+        patch: interface::types::producer::UpdateProducer,
+    ) -> Result<Producer, ServiceError> {
+        let current = self
+            .producer_dao
+            .get_by_id(producer_id)?
+            .ok_or(ServiceError::NotFound)?;
+
+        let current_group = self.group_dao.get_group(current.group_id)?;
+        if user_id != current_group.owner_user_id {
+            Err(ServiceError::Forbidden)?
+        }
+
+        if let Some(target_group_id) = patch.group_id {
+            let target_group = self.group_dao.get_group(target_group_id)?;
+            if target_group.owner_user_id != user_id {
+                Err(ServiceError::Forbidden)?
+            }
+            self.producer_dao
+                .update_group(producer_id, target_group_id)?;
+        }
+
+        if let Some(ref name) = patch.name {
+            validate_firmware_compatible_name(name, "name")?;
+        }
+
+        let has_metadata_patch = patch.name.is_some() || patch.description.is_some();
+
+        if !has_metadata_patch {
+            return self
+                .producer_dao
+                .get_by_id(producer_id)?
+                .ok_or(ServiceError::NotFound)
+                .map(Into::into);
+        }
+
+        let update = ProducerUpdate {
+            name: patch.name,
+            description: patch.description,
+            last_seen: None,
+            forwarder_id: None,
+        };
+
+        self.producer_dao
+            .update_metadata(producer_id, update)
+            .map_err(Into::into)
+            .map(Into::into)
     }
 
     pub fn rotate_credentials(
@@ -377,6 +458,121 @@ mod tests {
             let (ctx, service) = setup_service();
             let user = create_test_user(&ctx.pool, "user");
             let _ = service.rotate_credentials(user.id, Uuid::new_v4());
+        }
+
+        #[test]
+        fn test_update_producer_success() {
+            let (ctx, service) = setup_service();
+            let user = create_test_user(&ctx.pool, "upd_prod_owner");
+            let location = create_test_location(&ctx.pool, "upd_prod_loc");
+            let group = create_test_group(&ctx.pool, user.id, location.id, "upd_prod_group");
+            let producer = create_test_producer(&ctx.pool, group.id, location.id, "upd_prod");
+
+            let updated = service
+                .update_producer(
+                    user.id,
+                    producer.id,
+                    crate::interface::types::producer::UpdateProducer {
+                        name: Some("UpdatedProducer".to_string()),
+                        description: Some("Updated desc".to_string()),
+                        group_id: None,
+                    },
+                )
+                .expect("Failed to update producer");
+
+            assert_eq!(updated.name, "UpdatedProducer");
+            assert_eq!(updated.description, "Updated desc");
+        }
+
+        #[test]
+        fn test_update_producer_move_group_success() {
+            let (ctx, service) = setup_service();
+            let user = create_test_user(&ctx.pool, "upd_move_owner");
+            let location = create_test_location(&ctx.pool, "upd_move_loc");
+            let group1 = create_test_group(&ctx.pool, user.id, location.id, "upd_move_g1");
+            let group2 = create_test_group(&ctx.pool, user.id, location.id, "upd_move_g2");
+            let producer = create_test_producer(&ctx.pool, group1.id, location.id, "upd_move_p");
+
+            let updated = service
+                .update_producer(
+                    user.id,
+                    producer.id,
+                    crate::interface::types::producer::UpdateProducer {
+                        name: None,
+                        description: None,
+                        group_id: Some(group2.id),
+                    },
+                )
+                .expect("Failed moving producer");
+
+            assert_eq!(updated.group_id, group2.id);
+        }
+
+        #[test]
+        fn test_update_producer_invalid_name() {
+            let (ctx, service) = setup_service();
+            let user = create_test_user(&ctx.pool, "upd_prod_inv_owner");
+            let location = create_test_location(&ctx.pool, "upd_prod_inv_loc");
+            let group = create_test_group(&ctx.pool, user.id, location.id, "upd_prod_inv_group");
+            let producer = create_test_producer(&ctx.pool, group.id, location.id, "upd_prod_inv");
+
+            let result = service.update_producer(
+                user.id,
+                producer.id,
+                crate::interface::types::producer::UpdateProducer {
+                    name: Some("has+plus".to_string()),
+                    description: None,
+                    group_id: None,
+                },
+            );
+
+            assert!(matches!(result, Err(ServiceError::TypeError(_))));
+        }
+
+        #[test]
+        fn test_update_producer_forbidden() {
+            let (ctx, service) = setup_service();
+            let owner = create_test_user(&ctx.pool, "upd_prod_forb_owner");
+            let other = create_test_user(&ctx.pool, "upd_prod_forb_other");
+            let location = create_test_location(&ctx.pool, "upd_prod_forb_loc");
+            let group = create_test_group(&ctx.pool, owner.id, location.id, "upd_prod_forb_group");
+            let producer = create_test_producer(&ctx.pool, group.id, location.id, "upd_prod_forb");
+
+            let result = service.update_producer(
+                other.id,
+                producer.id,
+                crate::interface::types::producer::UpdateProducer {
+                    name: Some("UpdatedProducer".to_string()),
+                    description: None,
+                    group_id: None,
+                },
+            );
+
+            assert!(matches!(result, Err(ServiceError::Forbidden)));
+        }
+
+        #[test]
+        fn test_create_producer_invalid_name() {
+            let (ctx, service) = setup_service();
+            let user = create_test_user(&ctx.pool, "create_prod_inv");
+            let location = create_test_location(&ctx.pool, "create_prod_inv");
+            let group = create_test_group(&ctx.pool, user.id, location.id, "create_prod_inv");
+
+            let new_producer = NewProducer {
+                location: NewLocation {
+                    name: Some("Prod Loc".to_string()),
+                    geo_lat: Some(1.0),
+                    geo_long: Some(2.0),
+                },
+                group_id: group.id,
+                name: "bad/name".to_string(),
+                ble_name: "BLE_New Prod".to_string(),
+                description: "Desc".to_string(),
+                forwarder_id: None,
+            };
+
+            let result = service.create_producer(user.id, new_producer);
+            assert!(matches!(result, Err(ServiceError::TypeError(_))));
         }
     }
 

@@ -3,6 +3,7 @@
 pub mod group;
 pub mod identity;
 pub mod location;
+pub mod pending_registration;
 pub mod producer;
 
 use diesel::prelude::*;
@@ -53,6 +54,7 @@ impl DaoError {
 
 impl From<diesel::result::Error> for DaoError {
     fn from(err: diesel::result::Error) -> Self {
+        log::warn!("Diesel error encountered: {err:?}");
         match err {
             diesel::result::Error::NotFound => DaoError::NotFound,
             diesel::result::Error::DatabaseError(

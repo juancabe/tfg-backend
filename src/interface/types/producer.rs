@@ -14,6 +14,13 @@ pub struct NewProducer {
     pub forwarder_id: Option<Uuid>,
 }
 
+#[derive(Deserialize, Serialize, Debug, utoipa::ToSchema)]
+pub struct UpdateProducer {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub group_id: Option<Uuid>,
+}
+
 // TODO: Don't wrap it, complete new type
 #[derive(Serialize, Deserialize, Debug, utoipa::ToSchema)]
 pub struct Producer {

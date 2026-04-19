@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod group;
 pub mod producer;
+pub mod provisioning;
 
 use thiserror::Error;
 

@@ -3,9 +3,39 @@ use crate::dao::group::GroupDao;
 use crate::dao::location::LocationDao;
 use crate::interface;
 use crate::interface::types::group::Group;
-use crate::model::models::{self};
+use crate::model::models::{self, GroupUpdate};
 use crate::service::ServiceError;
 use uuid::Uuid;
+
+// TODO: move firmware/MQTT-compatible name validation (MAX_FIRMWARE_NAME_LEN &
+// contains_mqtt_topic_meta) to a shared helper used by provisioning and group
+// services to avoid duplication.
+
+const MAX_FIRMWARE_NAME_LEN: usize = 32;
+
+fn contains_mqtt_topic_meta(v: &str) -> bool {
+    v.contains('/') || v.contains('+') || v.contains('#')
+}
+
+fn validate_firmware_compatible_name(name: &str, field_name: &str) -> Result<(), ServiceError> {
+    if name.is_empty() || name.len() > MAX_FIRMWARE_NAME_LEN {
+        return Err(ServiceError::TypeError(
+            crate::interface::types::TypeError::Validation(format!(
+                "{field_name} must be 1..={MAX_FIRMWARE_NAME_LEN} characters for firmware compatibility"
+            )),
+        ));
+    }
+
+    if contains_mqtt_topic_meta(name) {
+        return Err(ServiceError::TypeError(
+            crate::interface::types::TypeError::Validation(format!(
+                "{field_name} cannot include '/', '+' or '#'"
+            )),
+        ));
+    }
+
+    Ok(())
+}
 
 pub struct GroupService<G: GroupDao, L: LocationDao> {
     group_dao: G,
@@ -44,6 +74,9 @@ impl<G: GroupDao + Clone, L: LocationDao + Clone> GroupService<G, L> {
             is_public,
             location,
         } = new_group;
+        // Validate group name for firmware compatibility early so we don't create
+        // location resources when the group name is invalid.
+        validate_firmware_compatible_name(&name, "group name")?;
 
         let interface::types::location::NewLocation {
             name: loc_name,
@@ -99,6 +132,34 @@ impl<G: GroupDao + Clone, L: LocationDao + Clone> GroupService<G, L> {
 
         self.group_dao.delete_group(group_id).map_err(Into::into)
     }
+
+    pub fn update_group(
+        &self,
+        user_id: Uuid,
+        group_id: Uuid,
+        patch: interface::types::group::UpdateGroup,
+    ) -> Result<Group, ServiceError> {
+        let current = self.group_dao.get_group(group_id)?;
+        if current.owner_user_id != user_id {
+            Err(ServiceError::Forbidden)?
+        }
+
+        if let Some(ref name) = patch.name {
+            validate_firmware_compatible_name(name, "group name")?;
+        }
+
+        let update = GroupUpdate {
+            name: patch.name,
+            description: patch.description,
+            location_id: None,
+            is_public: patch.is_public.unwrap_or(current.is_public),
+        };
+
+        self.group_dao
+            .update_group(group_id, update)
+            .map_err(Into::into)
+            .map(Into::into)
+    }
 }
 
 #[cfg(test)]
@@ -139,6 +200,33 @@ mod tests {
 
             assert_eq!(result.name, "New Group");
             assert_eq!(result.owner_user_id, user.id);
+        }
+
+        #[test]
+        fn test_create_group_invalid_name() {
+            let ctx = setup();
+            let group_dao = PgGroupDao::new(ctx.pool.clone());
+            let location_dao = PgLocationDao::new(ctx.pool.clone());
+            let service = GroupService::new(group_dao, location_dao);
+            let user = create_test_user(&ctx.pool, "create_inv");
+            let invalid_repeated = "a".repeat(33).to_string();
+            let invalid_names = vec!["", &invalid_repeated, "has/slash", "has+plus", "has#hash"];
+
+            for name in invalid_names {
+                let new_group_input = InterfaceNewGroup {
+                    name: name.to_string(),
+                    description: "Desc".to_string(),
+                    is_public: true,
+                    location: InterfaceNewLocation {
+                        name: Some("Loc".to_string()),
+                        geo_lat: Some(1.0),
+                        geo_long: Some(1.0),
+                    },
+                };
+
+                let result = service.create_group(user.id, new_group_input);
+                assert!(matches!(result, Err(ServiceError::TypeError(_))));
+            }
         }
 
         #[test]
@@ -298,6 +386,80 @@ mod tests {
                 result,
                 Err(ServiceError::DbError(DaoError::NotFound))
             ));
+        }
+
+        #[test]
+        fn test_update_group_success() {
+            let ctx = setup();
+            let group_dao = PgGroupDao::new(ctx.pool.clone());
+            let location_dao = PgLocationDao::new(ctx.pool.clone());
+            let service = GroupService::new(group_dao, location_dao);
+            let user = create_test_user(&ctx.pool, "upd_group_svc");
+            let location = create_test_location(&ctx.pool, "upd_group_svc");
+            let group = create_test_group(&ctx.pool, user.id, location.id, "upd_group_svc");
+
+            let updated = service
+                .update_group(
+                    user.id,
+                    group.id,
+                    interface::types::group::UpdateGroup {
+                        name: Some("UpdatedName".to_string()),
+                        description: Some("Updated desc".to_string()),
+                        is_public: Some(true),
+                    },
+                )
+                .expect("Failed to update group");
+
+            assert_eq!(updated.name, "UpdatedName");
+            assert_eq!(updated.description, "Updated desc");
+            assert!(updated.is_public);
+        }
+
+        #[test]
+        fn test_update_group_invalid_name() {
+            let ctx = setup();
+            let group_dao = PgGroupDao::new(ctx.pool.clone());
+            let location_dao = PgLocationDao::new(ctx.pool.clone());
+            let service = GroupService::new(group_dao, location_dao);
+            let user = create_test_user(&ctx.pool, "upd_group_inv");
+            let location = create_test_location(&ctx.pool, "upd_group_inv");
+            let group = create_test_group(&ctx.pool, user.id, location.id, "upd_group_inv");
+
+            let result = service.update_group(
+                user.id,
+                group.id,
+                interface::types::group::UpdateGroup {
+                    name: Some("has/slash".to_string()),
+                    description: None,
+                    is_public: None,
+                },
+            );
+
+            assert!(matches!(result, Err(ServiceError::TypeError(_))));
+        }
+
+        #[test]
+        fn test_update_group_forbidden() {
+            let ctx = setup();
+            let group_dao = PgGroupDao::new(ctx.pool.clone());
+            let location_dao = PgLocationDao::new(ctx.pool.clone());
+            let service = GroupService::new(group_dao, location_dao);
+            let owner = create_test_user(&ctx.pool, "upd_group_owner");
+            let other = create_test_user(&ctx.pool, "upd_group_other");
+            let location = create_test_location(&ctx.pool, "upd_group_forb");
+            let group = create_test_group(&ctx.pool, owner.id, location.id, "upd_group_forb");
+
+            let result = service.update_group(
+                other.id,
+                group.id,
+                interface::types::group::UpdateGroup {
+                    name: Some("NewName".to_string()),
+                    description: None,
+                    is_public: None,
+                },
+            );
+
+            assert!(matches!(result, Err(ServiceError::Forbidden)));
         }
     }
 }

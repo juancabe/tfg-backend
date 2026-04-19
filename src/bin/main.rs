@@ -21,6 +21,9 @@ async fn main() {
         .build(manager)
         .expect("Failed to create DbPool");
 
+    // Log DB pool configuration at startup for diagnostics
+    log::info!("DB pool created: max_size={}", MAX_DB_POOL_SIZE);
+
     let http_listen_address =
         std::net::SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, DEFAULT_PORT));
 

@@ -17,13 +17,47 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
-    dao::DbPool,
-    helpers::http_app_state::AppState,
-    interface::http::docs::ApiDoc,
+    dao::DbPool, helpers::http_app_state::AppState, interface::http::docs::ApiDoc,
     service::ServiceError,
 };
 
-pub const DEFAULT_PORT: u16 = 8080;
+pub const DEFAULT_PORT: u16 = 8443;
+
+// Simple HTTP logging middleware: method, route (or path), status and latency
+async fn log_middleware(
+    req: axum::http::Request<axum::body::Body>,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let method = req.method().clone();
+    let path = req.uri().path().to_string();
+    let route = req
+        .extensions()
+        .get::<axum::extract::MatchedPath>()
+        .map(|m| m.as_str().to_string())
+        .unwrap_or(path.clone());
+    let start = std::time::Instant::now();
+    let resp = next.run(req).await;
+    let status = resp.status();
+    let elapsed_ms = start.elapsed().as_millis();
+    if status.is_server_error() || elapsed_ms > 1000 {
+        log::warn!(
+            "{} {} -> {} ({}ms)",
+            method,
+            route,
+            status.as_u16(),
+            elapsed_ms
+        );
+    } else {
+        log::info!(
+            "{} {} -> {} ({}ms)",
+            method,
+            route,
+            status.as_u16(),
+            elapsed_ms
+        );
+    }
+    resp
+}
 
 #[derive(Debug, Error)]
 pub enum HttpError {
@@ -40,6 +74,7 @@ pub mod docs;
 pub mod extractor;
 pub mod group_controller;
 pub mod producer_controller;
+pub mod provisioning_controller;
 
 pub struct Http {}
 
@@ -63,9 +98,35 @@ impl Http {
             )
             .route(
                 "/producers/{id}",
-                get(producer_controller::get_producer_by_id),
+                get(producer_controller::get_producer_by_id)
+                    .patch(producer_controller::patch_producer_by_id)
+                    .delete(producer_controller::delete_producer_by_id),
             )
-            .with_state(state);
+            .route(
+                "/groups",
+                get(group_controller::get_groups).post(group_controller::post_group),
+            )
+            .route(
+                "/groups/{id}",
+                get(group_controller::get_group_by_id)
+                    .patch(group_controller::patch_group_by_id)
+                    .delete(group_controller::delete_group_by_id),
+            )
+            .route(
+                "/provisioning/pending",
+                get(provisioning_controller::get_pending)
+                    .post(provisioning_controller::post_pending),
+            )
+            .route(
+                "/provisioning/pending/{id}/confirm",
+                post(provisioning_controller::post_pending_confirm),
+            )
+            .route(
+                "/provisioning/pending/{id}/cancel",
+                post(provisioning_controller::post_pending_cancel),
+            )
+            .with_state(state)
+            .layer(axum::middleware::from_fn(log_middleware));
 
         log::info!("Created HTTP Router");
         log::info!("Swagger UI available at http://{:?}/swagger-ui", addr);

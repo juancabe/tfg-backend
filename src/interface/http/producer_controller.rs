@@ -13,7 +13,7 @@ use crate::{
         http::HttpApiError,
         types::{
             group::Group,
-            producer::{NewProducer, Producer},
+            producer::{NewProducer, Producer, UpdateProducer},
         },
     },
     service::{auth::JWT, producer::ProducerService},
@@ -51,6 +51,22 @@ pub struct PostProducerResponse {
     producer: Producer,
 }
 
+#[derive(Deserialize, Serialize, Debug, utoipa::ToSchema)]
+pub struct PatchProducerBody {
+    producer: UpdateProducer,
+}
+
+#[derive(Deserialize, Serialize, Debug, utoipa::ToSchema)]
+pub struct PatchProducerResponse {
+    producer: Producer,
+}
+
+impl From<Producer> for PatchProducerResponse {
+    fn from(value: Producer) -> Self {
+        Self { producer: value }
+    }
+}
+
 impl From<Producer> for PostProducerResponse {
     fn from(value: Producer) -> Self {
         Self { producer: value }
@@ -63,7 +79,7 @@ impl From<Producer> for PostProducerResponse {
     get,
     path = "/producers",
     tag = "producers",
-    responses((status = 200, description = "Got producers", body = GetProducerResponse)),
+    responses((status = 200, description = "Got producers", body = GetProducersResponse)),
     security(("bearer_auth" = []))
 )]
 pub async fn get_producers(
@@ -118,6 +134,44 @@ pub async fn post_producer(
     let p_service: ProducerService<PgProducerDao, PgLocationDao, PgGroupDao> = pool.into();
     let res = p_service.create_producer(jwt.user_id, new_producer)?;
     Ok((StatusCode::CREATED, Json(res.into())))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/producers/{id}",
+    tag = "producers",
+    params(("id" = Uuid, Path, description = "The unique ID of the producer")),
+    security(("bearer_auth" = [])),
+    request_body = PatchProducerBody,
+    responses((status = 200, description = "Producer updated", body = PatchProducerResponse))
+)]
+pub async fn patch_producer_by_id(
+    jwt: JWT,
+    State(AppState { pool }): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(body): Json<PatchProducerBody>,
+) -> Result<Json<PatchProducerResponse>, HttpApiError> {
+    let p_service: ProducerService<PgProducerDao, PgLocationDao, PgGroupDao> = pool.into();
+    let producer = p_service.update_producer(jwt.user_id, id, body.producer)?;
+    Ok(Json(producer.into()))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/producers/{id}",
+    tag = "producers",
+    params(("id" = Uuid, Path, description = "The unique ID of the producer")),
+    security(("bearer_auth" = [])),
+    responses((status = 204, description = "Producer deleted"))
+)]
+pub async fn delete_producer_by_id(
+    jwt: JWT,
+    State(AppState { pool }): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, HttpApiError> {
+    let p_service: ProducerService<PgProducerDao, PgLocationDao, PgGroupDao> = pool.into();
+    p_service.delete_producer(jwt.user_id, id)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[cfg(test)]
@@ -259,6 +313,108 @@ mod tests {
             });
 
             let res = producer_controller::post_producer(jwt, state, body).await;
+            assert!(res.is_err());
+        }
+
+        #[tokio::test]
+        async fn test_patch_producer_success() {
+            let ctx = setup();
+            let user = create_test_user(&ctx.pool, "patch_prod_owner");
+            let location = create_test_location(&ctx.pool, "patch_prod_loc");
+            let group = create_test_group(&ctx.pool, user.id, location.id, "patch_prod_group");
+            let producer = create_test_producer(&ctx.pool, group.id, location.id, "patch_prod");
+
+            let jwt = mock_jwt(user.id, user.login);
+            let state = State(AppState {
+                pool: ctx.pool.clone(),
+            });
+
+            let res = producer_controller::patch_producer_by_id(
+                jwt,
+                state,
+                Path(producer.id),
+                Json(PatchProducerBody {
+                    producer: UpdateProducer {
+                        name: Some("Updated Producer".to_string()),
+                        description: Some("Updated desc".to_string()),
+                        group_id: None,
+                    },
+                }),
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(res.0.producer.name, "Updated Producer");
+        }
+
+        #[tokio::test]
+        async fn test_patch_producer_forbidden() {
+            let ctx = setup();
+            let owner = create_test_user(&ctx.pool, "patch_prod_owner2");
+            let other = create_test_user(&ctx.pool, "patch_prod_other2");
+            let location = create_test_location(&ctx.pool, "patch_prod_loc2");
+            let group = create_test_group(&ctx.pool, owner.id, location.id, "patch_prod_group2");
+            let producer = create_test_producer(&ctx.pool, group.id, location.id, "patch_prod2");
+
+            let jwt = mock_jwt(other.id, other.login);
+            let state = State(AppState {
+                pool: ctx.pool.clone(),
+            });
+
+            let res = producer_controller::patch_producer_by_id(
+                jwt,
+                state,
+                Path(producer.id),
+                Json(PatchProducerBody {
+                    producer: UpdateProducer {
+                        name: Some("Updated Producer".to_string()),
+                        description: None,
+                        group_id: None,
+                    },
+                }),
+            )
+            .await;
+
+            assert!(res.is_err());
+        }
+
+        #[tokio::test]
+        async fn test_delete_producer_success() {
+            let ctx = setup();
+            let user = create_test_user(&ctx.pool, "delete_prod_owner");
+            let location = create_test_location(&ctx.pool, "delete_prod_loc");
+            let group = create_test_group(&ctx.pool, user.id, location.id, "delete_prod_group");
+            let producer = create_test_producer(&ctx.pool, group.id, location.id, "delete_prod");
+
+            let jwt = mock_jwt(user.id, user.login);
+            let state = State(AppState {
+                pool: ctx.pool.clone(),
+            });
+
+            let status = producer_controller::delete_producer_by_id(jwt, state, Path(producer.id))
+                .await
+                .unwrap();
+
+            assert_eq!(status, StatusCode::NO_CONTENT);
+        }
+
+        #[tokio::test]
+        async fn test_delete_producer_forbidden() {
+            let ctx = setup();
+            let owner = create_test_user(&ctx.pool, "delete_prod_owner2");
+            let other = create_test_user(&ctx.pool, "delete_prod_other2");
+            let location = create_test_location(&ctx.pool, "delete_prod_loc2");
+            let group = create_test_group(&ctx.pool, owner.id, location.id, "delete_prod_group2");
+            let producer = create_test_producer(&ctx.pool, group.id, location.id, "delete_prod2");
+
+            let jwt = mock_jwt(other.id, other.login);
+            let state = State(AppState {
+                pool: ctx.pool.clone(),
+            });
+
+            let res =
+                producer_controller::delete_producer_by_id(jwt, state, Path(producer.id)).await;
+
             assert!(res.is_err());
         }
     }

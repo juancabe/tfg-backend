@@ -41,3 +41,10 @@ pub struct NewGroup {
     pub description: String,
     pub is_public: bool,
 }
+
+#[derive(Serialize, Deserialize, Debug, utoipa::ToSchema)]
+pub struct UpdateGroup {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub is_public: Option<bool>,
+}

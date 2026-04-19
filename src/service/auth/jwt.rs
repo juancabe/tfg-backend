@@ -2,7 +2,7 @@ use std::{env, time::Duration};
 
 use chrono::{DateTime, Utc};
 use jsonwebtoken::{
-    decode, encode, Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation,
+    Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation, decode, encode,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;

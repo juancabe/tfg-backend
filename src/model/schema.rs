@@ -81,8 +81,9 @@ diesel::table! {
         broker_host -> Text,
         broker_port -> Int2,
         username -> Text,
-        password -> Text,
+        password_hash -> Text,
         topic -> Text,
+        subscribe_topic -> Text,
     }
 }
 
@@ -91,6 +92,36 @@ diesel::table! {
         id -> Uuid,
         creator_user_id -> Nullable<Uuid>,
         name -> Text,
+    }
+}
+
+diesel::table! {
+    pending_producer_registrations (id) {
+        id -> Uuid,
+        owner_user_id -> Uuid,
+        group_id -> Uuid,
+        producer_id -> Nullable<Uuid>,
+        status -> Int2,
+        expires_at -> Timestamptz,
+        confirmed_at -> Nullable<Timestamptz>,
+        cancelled_at -> Nullable<Timestamptz>,
+        created_at -> Timestamptz,
+        producer_name -> Text,
+        ble_name -> Text,
+        description -> Text,
+        location_name -> Nullable<Text>,
+        location_geo_lat -> Nullable<Float8>,
+        location_geo_long -> Nullable<Float8>,
+        forwarder_id -> Nullable<Uuid>,
+        data_template_id -> Nullable<Uuid>,
+        mqtt_username -> Text,
+        mqtt_password_hash -> Text,
+        mqtt_topic -> Text,
+        mqtt_subscribe_topic -> Text,
+        broker_host -> Text,
+        broker_port -> Int2,
+        x25519_pub_key_bytes_base64 -> Nullable<Text>,
+        lora_addr -> Nullable<Int4>,
     }
 }
 
@@ -154,6 +185,9 @@ diesel::joinable!(groups -> users (owner_user_id));
 diesel::joinable!(internet_auths -> producers (producer_id));
 diesel::joinable!(mqtt_broker_auths -> producers (producer_id));
 diesel::joinable!(packet_templates -> users (creator_user_id));
+diesel::joinable!(pending_producer_registrations -> groups (group_id));
+diesel::joinable!(pending_producer_registrations -> packet_templates (data_template_id));
+diesel::joinable!(pending_producer_registrations -> users (owner_user_id));
 diesel::joinable!(producers -> groups (group_id));
 diesel::joinable!(producers -> locations (location_id));
 diesel::joinable!(refresh_tokens -> users (user_id));
@@ -170,6 +204,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     locations,
     mqtt_broker_auths,
     packet_templates,
+    pending_producer_registrations,
     producers,
     refresh_tokens,
     template_fields,

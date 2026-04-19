@@ -1,4 +1,4 @@
-use crate::{dao::DbPool, model::models::MqttBrokerAuth};
+use crate::{dao::DbPool, helpers::crypto_password, model::models::MqttBrokerAuth};
 use diesel::prelude::*;
 use uuid::Uuid;
 
@@ -29,6 +29,8 @@ pub struct ProducerIdentity {
     pub producer_id: Uuid,
     /// Exact topic this producer is allowed to publish to.
     pub allowed_topic: String,
+    /// Exact topic this producer is allowed to subscribe to.
+    pub allowed_subscribe_topic: String,
 }
 
 impl MqttAuthService {
@@ -43,15 +45,6 @@ impl MqttAuthService {
     /// match a row in `mqtt_broker_auths`; otherwise returns
     /// [`AuthDecision::Rejected`].
     pub fn authenticate(&self, username_in: &str, password_in: &str) -> AuthDecision {
-        // TODO: Get rid of this
-        if username_in == "admin" && password_in == "password" {
-            log::info!("Admin connected!");
-            return AuthDecision::Allowed(ProducerIdentity {
-                producer_id: Uuid::default(),
-                allowed_topic: "/v1/ping".to_string(),
-            });
-        }
-
         use crate::model::schema::mqtt_broker_auths::dsl::*;
 
         let conn = match self.pool.get() {
@@ -76,16 +69,19 @@ impl MqttAuthService {
                 return AuthDecision::Rejected;
             }
         }) else {
+            log::warn!("MQTT auth row not found");
             return AuthDecision::Rejected;
         };
 
-        if auth_row.password != password_in {
+        if !crypto_password::verify_password(&auth_row.password_hash, password_in) {
+            log::warn!("MQTT auth pass doesn't match");
             return AuthDecision::Rejected;
         }
 
         AuthDecision::Allowed(ProducerIdentity {
             producer_id: auth_row.producer_id,
             allowed_topic: auth_row.topic,
+            allowed_subscribe_topic: auth_row.subscribe_topic,
         })
     }
 
@@ -94,6 +90,40 @@ impl MqttAuthService {
     /// Current policy is strict exact-topic match and is intentionally simple
     /// for ingest-focused bootstrapping.
     pub fn authorize_publish(identity: &ProducerIdentity, topic: &str) -> bool {
-        identity.allowed_topic == topic
+        if identity.allowed_topic == "/v1/forbidden" {
+            return false;
+        }
+        topic_matches_filter(topic, &identity.allowed_topic)
     }
+
+    pub fn authorize_subscribe(identity: &ProducerIdentity, topic_filter: &str) -> bool {
+        identity.allowed_subscribe_topic == topic_filter
+    }
+}
+
+fn topic_matches_filter(topic: &str, filter: &str) -> bool {
+    let topic_levels: Vec<&str> = topic.split('/').filter(|s| !s.is_empty()).collect();
+    let filter_levels: Vec<&str> = filter.split('/').filter(|s| !s.is_empty()).collect();
+
+    let mut ti = 0usize;
+    let mut fi = 0usize;
+    while fi < filter_levels.len() {
+        let f = filter_levels[fi];
+        if f == "#" {
+            return true;
+        }
+
+        if ti >= topic_levels.len() {
+            return false;
+        }
+
+        if f != "+" && f != topic_levels[ti] {
+            return false;
+        }
+
+        ti += 1;
+        fi += 1;
+    }
+
+    ti == topic_levels.len()
 }
