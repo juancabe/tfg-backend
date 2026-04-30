@@ -74,6 +74,7 @@ impl<D: IdentityDao> AuthService<D> {
                 let user = if let Some(user) = self._dao.find_by_email_pass(email_pass)? {
                     user
                 } else {
+                    log::info!("[authenticate_user] no user found");
                     return Ok(None);
                 };
 

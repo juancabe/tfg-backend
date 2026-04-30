@@ -3,8 +3,10 @@
 pub mod group;
 pub mod identity;
 pub mod location;
+pub mod mqtt;
 pub mod pending_registration;
 pub mod producer;
+pub mod template_data;
 
 use diesel::prelude::*;
 use diesel::r2d2::ConnectionManager;

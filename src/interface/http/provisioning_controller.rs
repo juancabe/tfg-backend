@@ -12,7 +12,8 @@ use crate::{
         types::provisioning::{
             CancelPendingProvisioningResponse, ConfirmPendingProvisioningRequest,
             ConfirmPendingProvisioningResponse, CreatePendingProvisioningRequest,
-            CreatePendingProvisioningResponse, ListPendingProvisioningResponse,
+            CreatePendingProvisioningResponse, ListAvailableForwardersResponse,
+            ListPendingProvisioningResponse,
         },
     },
     service::{auth::JWT, provisioning::ProvisioningService},
@@ -49,6 +50,24 @@ pub async fn get_pending(
 ) -> Result<Json<ListPendingProvisioningResponse>, HttpApiError> {
     let service: ProvisioningService<_, _, _, _> = pool.into();
     let out = service.list_pending_for_owner(jwt.user_id)?;
+    Ok(Json(out))
+}
+
+#[utoipa::path(
+    get,
+    path = "/provisioning/groups/{group_id}/available-forwarders",
+    tag = "provisioning",
+    params(("group_id" = Uuid, Path, description = "Group id")),
+    responses((status = 200, description = "List available forwarders for group", body = ListAvailableForwardersResponse)),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_available_forwarders(
+    jwt: JWT,
+    State(AppState { pool }): State<AppState>,
+    Path(group_id): Path<Uuid>,
+) -> Result<Json<ListAvailableForwardersResponse>, HttpApiError> {
+    let service: ProvisioningService<_, _, _, _> = pool.into();
+    let out = service.list_available_forwarders(jwt.user_id, group_id)?;
     Ok(Json(out))
 }
 
@@ -94,17 +113,19 @@ pub async fn post_pending_cancel(
 mod tests {
     use super::*;
     use axum::extract::{Path, State};
+    use axum::response::IntoResponse;
     use diesel::prelude::*;
 
     use crate::{
         helpers::crypto_password,
+        helpers::data_templates::RANDOMFLOAT_TEMPLATE_ID,
         interface::types::{
             location::NewLocation,
             provisioning::{CreatePendingProvisioningRequest, PendingProvisioningView},
         },
         model::{
             models::{
-                InternetAuth, MqttBrokerAuth, NewPacketTemplate, PacketTemplate,
+                InternetAuth, MqttBrokerAuth, NewInternetAuth, NewPacketTemplate, PacketTemplate,
                 PendingProducerRegistration, PendingProducerRegistrationStatus, Producer,
             },
             schema::{
@@ -113,7 +134,9 @@ mod tests {
             },
         },
         service::auth::JWTKind,
-        test_utils::{create_test_group, create_test_location, create_test_user, setup},
+        test_utils::{
+            create_test_group, create_test_location, create_test_producer, create_test_user, setup,
+        },
     };
 
     fn mock_jwt(user_id: Uuid, login: String) -> JWT {
@@ -148,8 +171,93 @@ mod tests {
                 geo_long: Some(20.0),
             },
             forwarder_id: None,
+            forward_lora: None,
             data_template_id: template_id,
         }
+    }
+
+    fn make_forwarder_available(
+        pool: &crate::dao::DbPool,
+        producer_id: Uuid,
+        lora: i32,
+        key: &str,
+    ) {
+        let mut conn = pool.get().expect("db conn");
+
+        diesel::update(producers::table.find(producer_id))
+            .set((
+                producers::forward_lora.eq(true),
+                producers::lora_addr.eq(Some(lora)),
+            ))
+            .execute(&mut conn)
+            .expect("mark producer as forwarder");
+
+        diesel::insert_into(internet_auths::table)
+            .values(NewInternetAuth {
+                producer_id,
+                x25519_pub_key_bytes_base64: key.to_string(),
+            })
+            .execute(&mut conn)
+            .expect("insert internet auth");
+    }
+
+    #[tokio::test]
+    async fn test_default_randomfloat_template_is_seeded() {
+        let ctx = setup();
+        let mut conn = ctx.pool.get().expect("db conn");
+
+        let seeded = packet_templates::table
+            .find(Uuid::parse_str(RANDOMFLOAT_TEMPLATE_ID).expect("valid uuid"))
+            .select(PacketTemplate::as_select())
+            .get_result::<PacketTemplate>(&mut conn)
+            .expect("seeded randomfloat template should exist");
+
+        assert_eq!(seeded.name, "randomfloat");
+    }
+
+    #[tokio::test]
+    async fn test_create_pending_with_seeded_randomfloat_template() {
+        let ctx = setup();
+        let user = create_test_user(&ctx.pool, "prov_seeded_tmpl");
+        let loc = create_test_location(&ctx.pool, "prov_seeded_tmpl");
+        let group = create_test_group(&ctx.pool, user.id, loc.id, "prov_seeded_tmpl");
+
+        let template_id = Uuid::parse_str(RANDOMFLOAT_TEMPLATE_ID).expect("valid uuid");
+        let created = post_pending(
+            mock_jwt(user.id, user.login.clone()),
+            state(ctx.pool.clone()),
+            Json(mk_pending_req(group.id, Some(template_id))),
+        )
+        .await
+        .expect("create pending")
+        .1
+        .0;
+
+        let publish_topic = created
+            .wifi_bundle
+            .publish_topic
+            .clone()
+            .expect("publish topic should exist");
+        assert!(publish_topic.contains(RANDOMFLOAT_TEMPLATE_ID));
+    }
+
+    #[tokio::test]
+    async fn test_create_pending_rejects_unknown_template() {
+        let ctx = setup();
+        let user = create_test_user(&ctx.pool, "prov_bad_tmpl");
+        let loc = create_test_location(&ctx.pool, "prov_bad_tmpl");
+        let group = create_test_group(&ctx.pool, user.id, loc.id, "prov_bad_tmpl");
+
+        let res = post_pending(
+            mock_jwt(user.id, user.login.clone()),
+            state(ctx.pool.clone()),
+            Json(mk_pending_req(group.id, Some(Uuid::new_v4()))),
+        )
+        .await;
+
+        assert!(res.is_err());
+        let response = res.unwrap_err().into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
     fn find_pending_by_id(pool: &crate::dao::DbPool, id: Uuid) -> PendingProducerRegistration {
@@ -305,6 +413,169 @@ mod tests {
             internet_auth.x25519_pub_key_bytes_base64,
             "aW50ZXJuZXQtcHViLWtleQ=="
         );
+    }
+
+    #[tokio::test]
+    async fn test_get_available_forwarders_lists_only_eligible_forwarders() {
+        let ctx = setup();
+        let owner = create_test_user(&ctx.pool, "prov_list_fwd");
+        let loc = create_test_location(&ctx.pool, "prov_list_fwd");
+        let group = create_test_group(&ctx.pool, owner.id, loc.id, "prov_list_fwd");
+        let other_group = create_test_group(&ctx.pool, owner.id, loc.id, "prov_list_fwd_other");
+
+        let eligible = create_test_producer(&ctx.pool, group.id, loc.id, "eligible");
+        make_forwarder_available(&ctx.pool, eligible.id, 1001, "a2V5LWVsaWdpYmxl");
+
+        let no_auth = create_test_producer(&ctx.pool, group.id, loc.id, "no_auth");
+        {
+            let mut conn = ctx.pool.get().expect("db conn");
+            diesel::update(producers::table.find(no_auth.id))
+                .set((
+                    producers::forward_lora.eq(true),
+                    producers::lora_addr.eq(Some(1002)),
+                ))
+                .execute(&mut conn)
+                .expect("mark no_auth producer");
+        }
+
+        let no_lora = create_test_producer(&ctx.pool, group.id, loc.id, "no_lora");
+        {
+            let mut conn = ctx.pool.get().expect("db conn");
+            diesel::update(producers::table.find(no_lora.id))
+                .set(producers::forward_lora.eq(true))
+                .execute(&mut conn)
+                .expect("mark no_lora producer");
+            diesel::insert_into(internet_auths::table)
+                .values(NewInternetAuth {
+                    producer_id: no_lora.id,
+                    x25519_pub_key_bytes_base64: "a2V5LW5vLWxvcmE=".to_string(),
+                })
+                .execute(&mut conn)
+                .expect("insert no_lora internet auth");
+        }
+
+        let other_group_eligible =
+            create_test_producer(&ctx.pool, other_group.id, loc.id, "other_group");
+        make_forwarder_available(
+            &ctx.pool,
+            other_group_eligible.id,
+            1003,
+            "a2V5LW90aGVyLWdyb3Vw",
+        );
+
+        let out = get_available_forwarders(
+            mock_jwt(owner.id, owner.login),
+            state(ctx.pool.clone()),
+            Path(group.id),
+        )
+        .await
+        .expect("list available forwarders")
+        .0;
+
+        assert_eq!(out.forwarders.len(), 1);
+        assert_eq!(out.forwarders[0].id, eligible.id);
+        assert_eq!(out.forwarders[0].lora_addr, 1001);
+        assert_eq!(
+            out.forwarders[0].x25519_pub_key_bytes_base64,
+            "a2V5LWVsaWdpYmxl"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_available_forwarders_forbidden_for_non_owner() {
+        let ctx = setup();
+        let owner = create_test_user(&ctx.pool, "prov_list_fwd_owner");
+        let other = create_test_user(&ctx.pool, "prov_list_fwd_other");
+        let loc = create_test_location(&ctx.pool, "prov_list_fwd_forbidden");
+        let group = create_test_group(&ctx.pool, owner.id, loc.id, "prov_list_fwd_forbidden");
+
+        let res = get_available_forwarders(
+            mock_jwt(other.id, other.login),
+            state(ctx.pool.clone()),
+            Path(group.id),
+        )
+        .await;
+
+        assert!(res.is_err());
+        let response = res.unwrap_err().into_response();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn test_create_pending_rejects_forward_lora_with_forwarder_id() {
+        let ctx = setup();
+        let user = create_test_user(&ctx.pool, "prov_forward_conflict");
+        let loc = create_test_location(&ctx.pool, "prov_forward_conflict");
+        let group = create_test_group(&ctx.pool, user.id, loc.id, "prov_forward_conflict");
+        let forwarder = create_test_producer(&ctx.pool, group.id, loc.id, "prov_forward_conflict");
+
+        let mut req = mk_pending_req(group.id, None);
+        req.forward_lora = Some(true);
+        req.forwarder_id = Some(forwarder.id);
+
+        let res = post_pending(
+            mock_jwt(user.id, user.login),
+            state(ctx.pool.clone()),
+            Json(req),
+        )
+        .await;
+
+        assert!(res.is_err());
+        let response = res.unwrap_err().into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_create_pending_rejects_unavailable_forwarder() {
+        let ctx = setup();
+        let user = create_test_user(&ctx.pool, "prov_bad_forwarder");
+        let loc = create_test_location(&ctx.pool, "prov_bad_forwarder");
+        let group = create_test_group(&ctx.pool, user.id, loc.id, "prov_bad_forwarder");
+        let not_available = create_test_producer(&ctx.pool, group.id, loc.id, "prov_bad_forwarder");
+
+        let mut req = mk_pending_req(group.id, None);
+        req.forwarder_id = Some(not_available.id);
+
+        let res = post_pending(
+            mock_jwt(user.id, user.login),
+            state(ctx.pool.clone()),
+            Json(req),
+        )
+        .await;
+
+        assert!(res.is_err());
+        let response = res.unwrap_err().into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_create_pending_accepts_available_forwarder() {
+        let ctx = setup();
+        let user = create_test_user(&ctx.pool, "prov_ok_forwarder");
+        let loc = create_test_location(&ctx.pool, "prov_ok_forwarder");
+        let group = create_test_group(&ctx.pool, user.id, loc.id, "prov_ok_forwarder");
+        let forwarder = create_test_producer(&ctx.pool, group.id, loc.id, "prov_ok_forwarder");
+        make_forwarder_available(&ctx.pool, forwarder.id, 2020, "a2V5LW9rLWZvcndhcmRlcg==");
+
+        let mut req = mk_pending_req(group.id, None);
+        req.forwarder_id = Some(forwarder.id);
+
+        let created = post_pending(
+            mock_jwt(user.id, user.login),
+            state(ctx.pool.clone()),
+            Json(req),
+        )
+        .await
+        .expect("create pending with forwarder")
+        .1
+        .0;
+
+        assert_eq!(created.pending.forwarder_id, Some(forwarder.id));
+        assert!(!created.pending.forward_lora);
+
+        let pending = find_pending_by_id(&ctx.pool, created.pending.id);
+        assert_eq!(pending.forwarder_id, Some(forwarder.id));
+        assert!(!pending.forward_lora);
     }
 
     #[tokio::test]

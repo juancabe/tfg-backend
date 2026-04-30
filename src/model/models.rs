@@ -237,6 +237,8 @@ pub struct Producer {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub forwarder_id: Option<Uuid>,
+    pub lora_addr: Option<i32>,
+    pub forward_lora: bool,
 }
 
 #[derive(Debug, Insertable)]
@@ -248,6 +250,8 @@ pub struct NewProducer {
     pub ble_name: String,
     pub description: String,
     pub forwarder_id: Option<Uuid>,
+    pub lora_addr: Option<i32>,
+    pub forward_lora: bool,
 }
 
 #[derive(Debug, AsChangeset)]
@@ -257,6 +261,8 @@ pub struct ProducerUpdate {
     pub description: Option<String>,
     pub last_seen: Option<DateTime<Utc>>,
     pub forwarder_id: Option<Uuid>,
+    pub lora_addr: Option<i32>,
+    pub forward_lora: Option<bool>,
 }
 
 #[derive(Debug, Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize)]
@@ -320,6 +326,7 @@ pub struct PendingProducerRegistration {
     pub location_geo_lat: Option<f64>,
     pub location_geo_long: Option<f64>,
     pub forwarder_id: Option<Uuid>,
+    pub forward_lora: bool,
     pub data_template_id: Option<Uuid>,
     pub mqtt_username: String,
     pub mqtt_password_hash: String,
@@ -348,6 +355,7 @@ pub struct NewPendingProducerRegistration {
     pub location_geo_lat: Option<f64>,
     pub location_geo_long: Option<f64>,
     pub forwarder_id: Option<Uuid>,
+    pub forward_lora: bool,
     pub data_template_id: Option<Uuid>,
     pub mqtt_username: String,
     pub mqtt_password_hash: String,
@@ -422,7 +430,7 @@ pub struct NewPacketTemplate {
     pub name: String,
 }
 
-#[derive(Debug, Queryable, Selectable, Identifiable, Serialize, Deserialize)]
+#[derive(Debug, Queryable, Selectable, Identifiable, Serialize, Deserialize, Clone)]
 #[diesel(table_name = template_fields)]
 pub struct TemplateField {
     pub id: Uuid,

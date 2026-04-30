@@ -54,7 +54,7 @@ pub enum RegisterResponse {
     NeedsVerification,
 }
 
-#[derive(Deserialize, utoipa::ToSchema)]
+#[derive(Deserialize, utoipa::ToSchema, Debug)]
 /// Accepts the [`AuthMethod`] that'll be used to login
 pub struct LoginPayload {
     pub auth_method: AuthMethod,
@@ -150,6 +150,7 @@ pub async fn post_login(
     payload: Result<Json<LoginPayload>, JsonRejection>,
 ) -> Result<LoginResponse, HttpApiError> {
     let payload = payload?.0;
+    log::info!("[post_login] with:  {:?}", payload);
     let dao = PgIdentityDao::new(pool);
     let service = AuthService::new(dao);
     if let Some(tokens) = service.authenticate_user(payload.into())? {

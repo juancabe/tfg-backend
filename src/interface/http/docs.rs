@@ -6,16 +6,21 @@ use utoipa::{
 use crate::helpers::users_auth::AuthMethod;
 use crate::interface::http::{
     auth_controller, group_controller, producer_controller, provisioning_controller,
+    template_data_controller,
 };
 use crate::interface::types::{
     group::{Group, NewGroup, UpdateGroup},
     location::NewLocation,
     producer::{NewProducer, Producer, UpdateProducer},
     provisioning::{
-        CancelPendingProvisioningResponse, ConfirmPendingProvisioningRequest,
-        ConfirmPendingProvisioningResponse, CreatePendingProvisioningRequest,
-        CreatePendingProvisioningResponse, ListPendingProvisioningResponse,
-        PendingProvisioningView, ProvisioningWifiBundle,
+        AvailableForwarderView, CancelPendingProvisioningResponse,
+        ConfirmPendingProvisioningRequest, ConfirmPendingProvisioningResponse,
+        CreatePendingProvisioningRequest, CreatePendingProvisioningResponse,
+        ListAvailableForwardersResponse, ListPendingProvisioningResponse, PendingProvisioningView,
+        ProvisioningWifiBundle,
+    },
+    template_data::{
+        DataSampleView, PacketTemplateView, ProducerDataQuery, ProducerDataView, TemplateFieldView,
     },
 };
 
@@ -55,8 +60,11 @@ impl Modify for SecurityAddon {
         group_controller::delete_group_by_id,
         provisioning_controller::post_pending,
         provisioning_controller::get_pending,
+        provisioning_controller::get_available_forwarders,
         provisioning_controller::post_pending_confirm,
         provisioning_controller::post_pending_cancel,
+        template_data_controller::get_templates,
+        template_data_controller::get_producer_data,
     ),
     components(
         schemas(
@@ -96,10 +104,20 @@ impl Modify for SecurityAddon {
             CreatePendingProvisioningResponse,
             PendingProvisioningView,
             ProvisioningWifiBundle,
+            AvailableForwarderView,
+            ListAvailableForwardersResponse,
             ConfirmPendingProvisioningRequest,
             ConfirmPendingProvisioningResponse,
             CancelPendingProvisioningResponse,
             ListPendingProvisioningResponse,
+
+            template_data_controller::GetTemplatesResponse,
+            template_data_controller::GetProducerDataResponse,
+            PacketTemplateView,
+            TemplateFieldView,
+            DataSampleView,
+            ProducerDataQuery,
+            ProducerDataView,
         )
     ),
     modifiers(&SecurityAddon),
@@ -107,7 +125,8 @@ impl Modify for SecurityAddon {
         (name = "auth", description = "Authentication and authorization endpoints"),
         (name = "producers", description = "Producer management endpoints"),
         (name = "groups", description = "Group management endpoints"),
-        (name = "provisioning", description = "Device provisioning and pending registrations")
+        (name = "provisioning", description = "Device provisioning and pending registrations"),
+        (name = "templates", description = "Packet templates and producer data endpoints")
     )
 )]
 pub struct ApiDoc;

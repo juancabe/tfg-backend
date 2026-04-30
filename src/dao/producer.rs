@@ -58,6 +58,17 @@ pub trait ProducerDao {
 
     fn get_auth_credentials(&self, producer_id: Uuid) -> Result<ProducerAuthCredentials, DaoError>;
     fn delete(&self, id: Uuid) -> Result<(), DaoError>;
+
+    fn list_available_forwarders(
+        &self,
+        owner_user_id: Uuid,
+        group_id: Uuid,
+    ) -> Result<Vec<crate::service::provisioning::ForwarderCandidate>, DaoError>;
+
+    fn get_forwarder_candidate(
+        &self,
+        forwarder_id: Uuid,
+    ) -> Result<Option<crate::service::provisioning::ForwarderCandidate>, DaoError>;
 }
 
 #[derive(Clone)]
@@ -304,6 +315,132 @@ impl ProducerDao for PgProducerDao {
             ))),
         }
     }
+
+    fn list_available_forwarders(
+        &self,
+        owner_user_id_in: Uuid,
+        group_id_in: Uuid,
+    ) -> Result<Vec<crate::service::provisioning::ForwarderCandidate>, DaoError> {
+        use crate::model::schema::{groups, internet_auths, producers};
+
+        let conn = &mut self.pool.get()?;
+
+        producers::table
+            .inner_join(groups::table.on(groups::id.eq(producers::group_id)))
+            .inner_join(internet_auths::table.on(internet_auths::producer_id.eq(producers::id)))
+            .filter(groups::id.eq(group_id_in))
+            .filter(groups::owner_user_id.eq(owner_user_id_in))
+            .filter(producers::forward_lora.eq(true))
+            .filter(producers::lora_addr.is_not_null())
+            .select((
+                producers::id,
+                producers::group_id,
+                producers::name,
+                producers::ble_name,
+                producers::description,
+                producers::lora_addr,
+                producers::forward_lora,
+                internet_auths::x25519_pub_key_bytes_base64,
+            ))
+            .load::<(
+                Uuid,
+                Uuid,
+                String,
+                String,
+                String,
+                Option<i32>,
+                bool,
+                String,
+            )>(conn)
+            .map(|rows| {
+                rows.into_iter()
+                    .filter_map(
+                        |(
+                            id,
+                            group_id,
+                            name,
+                            ble_name,
+                            description,
+                            lora_addr,
+                            forward_lora,
+                            pubkey,
+                        )| {
+                            lora_addr.map(|addr| crate::service::provisioning::ForwarderCandidate {
+                                id,
+                                group_id,
+                                name,
+                                ble_name,
+                                description,
+                                lora_addr: addr,
+                                forward_lora,
+                                x25519_pub_key_bytes_base64: pubkey,
+                            })
+                        },
+                    )
+                    .collect()
+            })
+            .map_err(Into::into)
+    }
+
+    fn get_forwarder_candidate(
+        &self,
+        forwarder_id_in: Uuid,
+    ) -> Result<Option<crate::service::provisioning::ForwarderCandidate>, DaoError> {
+        use crate::model::schema::{internet_auths, producers};
+
+        let conn = &mut self.pool.get()?;
+
+        producers::table
+            .inner_join(internet_auths::table.on(internet_auths::producer_id.eq(producers::id)))
+            .filter(producers::id.eq(forwarder_id_in))
+            .select((
+                producers::id,
+                producers::group_id,
+                producers::name,
+                producers::ble_name,
+                producers::description,
+                producers::lora_addr,
+                producers::forward_lora,
+                internet_auths::x25519_pub_key_bytes_base64,
+            ))
+            .first::<(
+                Uuid,
+                Uuid,
+                String,
+                String,
+                String,
+                Option<i32>,
+                bool,
+                String,
+            )>(conn)
+            .optional()
+            .map(|row| {
+                row.and_then(
+                    |(
+                        id,
+                        group_id,
+                        name,
+                        ble_name,
+                        description,
+                        lora_addr,
+                        forward_lora,
+                        pubkey,
+                    )| {
+                        lora_addr.map(|addr| crate::service::provisioning::ForwarderCandidate {
+                            id,
+                            group_id,
+                            name,
+                            ble_name,
+                            description,
+                            lora_addr: addr,
+                            forward_lora,
+                            x25519_pub_key_bytes_base64: pubkey,
+                        })
+                    },
+                )
+            })
+            .map_err(Into::into)
+    }
 }
 
 #[cfg(test)]
@@ -333,6 +470,8 @@ mod tests {
                 ble_name: "ble_test_producer".to_string(),
                 description: "A test producer".to_string(),
                 forwarder_id: None,
+                lora_addr: None,
+                forward_lora: false,
             };
 
             let result = dao
@@ -356,6 +495,8 @@ mod tests {
                 ble_name: "ble_test_producer_invalid".to_string(),
                 description: "Invalid group".to_string(),
                 forwarder_id: None,
+                lora_addr: None,
+                forward_lora: false,
             };
 
             let result = dao.create_producer(new_producer);
@@ -598,6 +739,8 @@ mod tests {
                     ble_name: "ble_lifecycle_prod".to_string(),
                     description: "desc".to_string(),
                     forwarder_id: None,
+                    lora_addr: None,
+                    forward_lora: false,
                 })
                 .expect("Create failed");
 

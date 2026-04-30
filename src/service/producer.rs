@@ -74,6 +74,15 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> Produc
         validate_firmware_compatible_name(&new_producer.name, "name")?;
         validate_firmware_compatible_name(&new_producer.ble_name, "ble_name")?;
 
+        let forward_lora = new_producer.forward_lora.unwrap_or(false);
+        if forward_lora && new_producer.forwarder_id.is_some() {
+            return Err(ServiceError::TypeError(
+                crate::interface::types::TypeError::Validation(
+                    "forwarder_id must be empty when forward_lora is true".to_string(),
+                ),
+            ));
+        }
+
         {
             let group = self.group_dao.get_group(new_producer.group_id)?;
             if group.owner_user_id != user_id {
@@ -92,6 +101,8 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> Produc
             ble_name: new_producer.ble_name,
             description: new_producer.description,
             forwarder_id: new_producer.forwarder_id,
+            lora_addr: new_producer.lora_addr,
+            forward_lora,
         };
 
         self.producer_dao
@@ -192,6 +203,8 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> Produc
             description: patch.description,
             last_seen: None,
             forwarder_id: None,
+            lora_addr: None,
+            forward_lora: None,
         };
 
         self.producer_dao
@@ -262,6 +275,8 @@ mod tests {
                 ble_name: "BLE_New Prod".to_string(),
                 description: "Desc".to_string(),
                 forwarder_id: None,
+                lora_addr: None,
+                forward_lora: None,
             };
 
             let result = service
@@ -290,6 +305,8 @@ mod tests {
                 ble_name: "BLE_New Prod".to_string(),
                 description: "Desc".to_string(),
                 forwarder_id: None,
+                lora_addr: None,
+                forward_lora: None,
             };
 
             let result = service.create_producer(other.id, new_producer);
@@ -312,6 +329,8 @@ mod tests {
                 ble_name: "BLE_New Prod".to_string(),
                 description: "Desc".to_string(),
                 forwarder_id: None,
+                lora_addr: None,
+                forward_lora: None,
             };
 
             let result = service.create_producer(user.id, new_producer);
@@ -569,6 +588,8 @@ mod tests {
                 ble_name: "BLE_New Prod".to_string(),
                 description: "Desc".to_string(),
                 forwarder_id: None,
+                lora_addr: None,
+                forward_lora: None,
             };
 
             let result = service.create_producer(user.id, new_producer);
@@ -600,6 +621,8 @@ mod tests {
                 ble_name: "BLE_Lifecycle Prod".to_string(),
                 description: "Desc".to_string(),
                 forwarder_id: None,
+                lora_addr: None,
+                forward_lora: None,
             };
             let created = service.create_producer(user.id, new_producer).unwrap();
 

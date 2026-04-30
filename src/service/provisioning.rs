@@ -2,6 +2,11 @@ use std::env;
 
 use chrono::{Duration, Utc};
 use diesel::Connection;
+use diesel::ExpressionMethods;
+use diesel::QueryDsl;
+use diesel::RunQueryDsl;
+use diesel::dsl::exists;
+use diesel::select;
 use uuid::Uuid;
 
 use crate::{
@@ -14,10 +19,11 @@ use crate::{
     },
     helpers::crypto_password,
     interface::types::provisioning::{
-        CancelPendingProvisioningResponse, ConfirmPendingProvisioningRequest,
-        ConfirmPendingProvisioningResponse, CreatePendingProvisioningRequest,
-        CreatePendingProvisioningResponse, ListPendingProvisioningResponse,
-        PendingProvisioningView, ProvisioningWifiBundle,
+        AvailableForwarderView, CancelPendingProvisioningResponse,
+        ConfirmPendingProvisioningRequest, ConfirmPendingProvisioningResponse,
+        CreatePendingProvisioningRequest, CreatePendingProvisioningResponse,
+        ListAvailableForwardersResponse, ListPendingProvisioningResponse, PendingProvisioningView,
+        ProvisioningWifiBundle,
     },
     model::models::{
         NewMqttBrokerAuth, NewPendingProducerRegistration, NewProducer,
@@ -31,6 +37,18 @@ const DEFAULT_PENDING_TTL_MINUTES: i64 = 15;
 // a shared helper module so provisioning and group services reuse the same
 // validation logic and messages.
 const MAX_FIRMWARE_NAME_LEN: usize = 32;
+
+#[derive(Debug, Clone)]
+pub struct ForwarderCandidate {
+    pub id: Uuid,
+    pub group_id: Uuid,
+    pub name: String,
+    pub ble_name: String,
+    pub description: String,
+    pub lora_addr: i32,
+    pub forward_lora: bool,
+    pub x25519_pub_key_bytes_base64: String,
+}
 
 pub struct ProvisioningService<Pd, Gd, Ld, Prd>
 where
@@ -68,6 +86,15 @@ where
     ) -> Result<CreatePendingProvisioningResponse, ServiceError> {
         validate_name_sizes(&req)?;
 
+        let forward_lora = req.forward_lora.unwrap_or(false);
+        if forward_lora && req.forwarder_id.is_some() {
+            return Err(ServiceError::TypeError(
+                crate::interface::types::TypeError::Validation(
+                    "forwarder_id must be empty when forward_lora is true".to_string(),
+                ),
+            ));
+        }
+
         let group = self.group_dao.get_group(req.group_id)?;
         if group.owner_user_id != owner_user_id {
             return Err(ServiceError::Forbidden);
@@ -85,6 +112,30 @@ where
                     "group name cannot include '/', '+' or '#'".to_string(),
                 ),
             ));
+        }
+
+        if let Some(forwarder_id) = req.forwarder_id {
+            self.validate_forwarder_selection(owner_user_id, req.group_id, forwarder_id)?;
+        }
+
+        if let Some(template_id) = req.data_template_id {
+            use crate::model::schema::packet_templates::dsl::*;
+            let mut conn = self
+                .producer_dao
+                .pool_clone()
+                .get()
+                .map_err(crate::dao::DaoError::from)?;
+            let template_exists = select(exists(packet_templates.filter(id.eq(template_id))))
+                .get_result::<bool>(&mut conn)
+                .map_err(crate::dao::DaoError::from)?;
+
+            if !template_exists {
+                return Err(ServiceError::TypeError(
+                    crate::interface::types::TypeError::Validation(
+                        "data_template_id does not exist".to_string(),
+                    ),
+                ));
+            }
         }
 
         let broker_host = env::var("MQTT_PROVISION_HOST")
@@ -150,6 +201,7 @@ where
             location_geo_lat: req.location.geo_lat,
             location_geo_long: req.location.geo_long,
             forwarder_id: req.forwarder_id,
+            forward_lora,
             data_template_id: req.data_template_id,
             mqtt_username: mqtt_username.clone(),
             mqtt_password_hash,
@@ -187,6 +239,33 @@ where
         })
     }
 
+    pub fn list_available_forwarders(
+        &self,
+        owner_user_id: Uuid,
+        group_id: Uuid,
+    ) -> Result<ListAvailableForwardersResponse, ServiceError> {
+        let group = self.group_dao.get_group(group_id)?;
+        if group.owner_user_id != owner_user_id {
+            return Err(ServiceError::Forbidden);
+        }
+
+        let forwarders = self
+            .producer_dao
+            .list_available_forwarders(owner_user_id, group_id)?
+            .into_iter()
+            .map(|f| AvailableForwarderView {
+                id: f.id,
+                name: f.name,
+                ble_name: f.ble_name,
+                description: f.description,
+                lora_addr: f.lora_addr,
+                x25519_pub_key_bytes_base64: f.x25519_pub_key_bytes_base64,
+            })
+            .collect();
+
+        Ok(ListAvailableForwardersResponse { forwarders })
+    }
+
     pub fn confirm_pending(
         &self,
         owner_user_id: Uuid,
@@ -203,6 +282,19 @@ where
         if pending.expires_at < Utc::now() {
             let _ = self.pending_dao.mark_expired_before(Utc::now())?;
             return Err(ServiceError::Forbidden);
+        }
+
+        if pending.forward_lora && pending.forwarder_id.is_some() {
+            return Err(ServiceError::TypeError(
+                crate::interface::types::TypeError::Validation(
+                    "invalid pending provisioning: forward_lora true cannot have forwarder_id"
+                        .to_string(),
+                ),
+            ));
+        }
+
+        if let Some(forwarder_id) = pending.forwarder_id {
+            self.validate_forwarder_selection(owner_user_id, pending.group_id, forwarder_id)?;
         }
 
         let pool = self.producer_dao.pool_clone();
@@ -226,6 +318,8 @@ where
                     ble_name: pending.ble_name.clone(),
                     description: pending.description.clone(),
                     forwarder_id: pending.forwarder_id,
+                    lora_addr: req.lora_addr,
+                    forward_lora: pending.forward_lora,
                 },
             )?;
 
@@ -284,6 +378,45 @@ where
             status: cancelled.status,
         })
     }
+
+    fn validate_forwarder_selection(
+        &self,
+        owner_user_id: Uuid,
+        group_id: Uuid,
+        forwarder_id: Uuid,
+    ) -> Result<(), ServiceError> {
+        let candidate = self
+            .producer_dao
+            .get_forwarder_candidate(forwarder_id)?
+            .ok_or_else(|| {
+                ServiceError::TypeError(crate::interface::types::TypeError::Validation(
+                    "forwarder_id does not reference an available forwarder".to_string(),
+                ))
+            })?;
+
+        if candidate.group_id != group_id {
+            return Err(ServiceError::TypeError(
+                crate::interface::types::TypeError::Validation(
+                    "forwarder_id must belong to the same group".to_string(),
+                ),
+            ));
+        }
+
+        let group = self.group_dao.get_group(candidate.group_id)?;
+        if group.owner_user_id != owner_user_id {
+            return Err(ServiceError::Forbidden);
+        }
+
+        if !candidate.forward_lora {
+            return Err(ServiceError::TypeError(
+                crate::interface::types::TypeError::Validation(
+                    "forwarder_id must reference a producer with forward_lora=true".to_string(),
+                ),
+            ));
+        }
+
+        Ok(())
+    }
 }
 
 impl From<DbPool>
@@ -308,6 +441,7 @@ fn pending_view_from_model(model: &PendingProducerRegistration) -> PendingProvis
         description: model.description.clone(),
         data_template_id: model.data_template_id,
         forwarder_id: model.forwarder_id,
+        forward_lora: model.forward_lora,
         status: model.status,
         expires_at: model.expires_at,
         created_at: model.created_at,

@@ -4,6 +4,7 @@ pub mod group;
 pub mod location;
 pub mod producer;
 pub mod provisioning;
+pub mod template_data;
 
 #[derive(Error, Debug)]
 pub enum TypeError {

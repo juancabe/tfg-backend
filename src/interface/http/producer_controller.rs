@@ -276,6 +276,8 @@ mod tests {
                     ble_name: "BLE_New Prod".to_string(),
                     description: "Desc".to_string(),
                     forwarder_id: None,
+                    lora_addr: None,
+                    forward_lora: None,
                 },
             });
 
@@ -309,6 +311,8 @@ mod tests {
                     ble_name: "BLE_New Prod".to_string(),
                     description: "Desc".to_string(),
                     forwarder_id: None,
+                    lora_addr: None,
+                    forward_lora: None,
                 },
             });
 

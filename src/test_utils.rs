@@ -1,4 +1,8 @@
 use crate::dao::DbPool;
+use crate::helpers::data_templates::{
+    RANDOMFLOAT_TEMPLATE_FIELD_ID, RANDOMFLOAT_TEMPLATE_FIELD_JSON_KEY,
+    RANDOMFLOAT_TEMPLATE_FIELD_NAME, RANDOMFLOAT_TEMPLATE_ID, RANDOMFLOAT_TEMPLATE_NAME,
+};
 use crate::model::models::User;
 use diesel::prelude::*;
 use diesel::r2d2::{self, ConnectionManager};
@@ -43,7 +47,32 @@ pub fn setup() -> TestContext {
         .execute(&mut conn)
         .expect("Failed to truncate tables");
 
+    seed_default_templates(&mut conn);
+
     TestContext { pool, _lock }
+}
+
+fn seed_default_templates(conn: &mut PgConnection) {
+    let insert_template_sql = format!(
+        "INSERT INTO packet_templates (id, creator_user_id, name) VALUES ('{}', NULL, '{}') ON CONFLICT (id) DO NOTHING",
+        RANDOMFLOAT_TEMPLATE_ID, RANDOMFLOAT_TEMPLATE_NAME,
+    );
+
+    diesel::sql_query(insert_template_sql)
+        .execute(conn)
+        .expect("Failed to seed default packet template");
+
+    let insert_field_sql = format!(
+        "INSERT INTO template_fields (id, template_id, name, json_key, repr_enum_value, unit_enum_value, unit_enum_other_payload) VALUES ('{}', '{}', '{}', '{}', 1, 5, NULL) ON CONFLICT (id) DO NOTHING",
+        RANDOMFLOAT_TEMPLATE_FIELD_ID,
+        RANDOMFLOAT_TEMPLATE_ID,
+        RANDOMFLOAT_TEMPLATE_FIELD_NAME,
+        RANDOMFLOAT_TEMPLATE_FIELD_JSON_KEY,
+    );
+
+    diesel::sql_query(insert_field_sql)
+        .execute(conn)
+        .expect("Failed to seed default packet template field");
 }
 
 // Factories
@@ -114,6 +143,8 @@ pub fn create_test_producer(
             ble_name: format!("BLE_producer_{}", suffix),
             description: "desc".to_string(),
             forwarder_id: None,
+            lora_addr: None,
+            forward_lora: false,
         })
         .returning(crate::model::models::Producer::as_returning())
         .get_result(&mut conn)

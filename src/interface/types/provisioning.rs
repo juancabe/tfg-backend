@@ -12,7 +12,23 @@ pub struct CreatePendingProvisioningRequest {
     pub description: String,
     pub location: NewLocation,
     pub forwarder_id: Option<Uuid>,
+    pub forward_lora: Option<bool>,
     pub data_template_id: Option<Uuid>,
+}
+
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct AvailableForwarderView {
+    pub id: Uuid,
+    pub name: String,
+    pub ble_name: String,
+    pub description: String,
+    pub lora_addr: i32,
+    pub x25519_pub_key_bytes_base64: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct ListAvailableForwardersResponse {
+    pub forwarders: Vec<AvailableForwarderView>,
 }
 
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
@@ -34,6 +50,7 @@ pub struct PendingProvisioningView {
     pub description: String,
     pub data_template_id: Option<Uuid>,
     pub forwarder_id: Option<Uuid>,
+    pub forward_lora: bool,
     pub status: i16,
     pub expires_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,

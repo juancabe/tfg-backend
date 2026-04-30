@@ -12,6 +12,8 @@ pub struct NewProducer {
     pub ble_name: String,
     pub description: String,
     pub forwarder_id: Option<Uuid>,
+    pub lora_addr: Option<i32>,
+    pub forward_lora: Option<bool>,
 }
 
 #[derive(Deserialize, Serialize, Debug, utoipa::ToSchema)]
@@ -34,6 +36,8 @@ pub struct Producer {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub forwarder_id: Option<Uuid>,
+    pub lora_addr: Option<i32>,
+    pub forward_lora: bool,
 }
 
 impl From<models::Producer> for Producer {
@@ -49,6 +53,8 @@ impl From<models::Producer> for Producer {
             created_at,
             updated_at,
             forwarder_id,
+            lora_addr,
+            forward_lora,
         } = value;
 
         Self {
@@ -62,6 +68,8 @@ impl From<models::Producer> for Producer {
             created_at,
             updated_at,
             forwarder_id,
+            lora_addr,
+            forward_lora,
         }
     }
 }

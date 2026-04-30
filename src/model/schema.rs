@@ -113,6 +113,7 @@ diesel::table! {
         location_geo_lat -> Nullable<Float8>,
         location_geo_long -> Nullable<Float8>,
         forwarder_id -> Nullable<Uuid>,
+        forward_lora -> Bool,
         data_template_id -> Nullable<Uuid>,
         mqtt_username -> Text,
         mqtt_password_hash -> Text,
@@ -137,6 +138,8 @@ diesel::table! {
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
         forwarder_id -> Nullable<Uuid>,
+        lora_addr -> Nullable<Int4>,
+        forward_lora -> Bool,
     }
 }
 

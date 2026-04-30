@@ -1,17 +1,10 @@
-use diesel::prelude::*;
 use ntex_mqtt::v5::{self, codec::PublishAckReason};
-use openssl::base64;
+#[cfg(test)]
 use uuid::Uuid;
 
-use crate::{
-    dao::{
-        DbPool,
-        producer::{PgProducerDao, ProducerDao},
-    },
-    model::models::NewData,
-};
+use crate::{dao::DbPool, service::mqtt::MqttIngestService as DomainMqttIngestService};
 
-use super::auth::{MqttAuthService, ProducerIdentity};
+use super::auth::{ProducerIdentity, PublishAuthorization};
 
 pub const MAX_PAYLOAD_BYTES: usize = 4096;
 
@@ -21,13 +14,14 @@ pub const MAX_PAYLOAD_BYTES: usize = 4096;
 /// routed into domain services (persistence, parsing, command fan-out, etc.).
 #[derive(Clone)]
 pub struct MqttIngestService {
-    pool: DbPool,
+    ingest_service: DomainMqttIngestService,
 }
 
 impl MqttIngestService {
     /// Creates a new ingest service with shared DB access.
     pub fn new(pool: DbPool) -> Self {
-        Self { pool }
+        let ingest_service = DomainMqttIngestService::from(pool);
+        Self { ingest_service }
     }
 
     /// Handles one MQTT v5 publish packet.
@@ -44,7 +38,23 @@ impl MqttIngestService {
     ) -> v5::PublishAck {
         let publish_topic = publish.publish_topic();
 
-        if !MqttAuthService::authorize_publish(identity, publish_topic) {
+        let authorization = match self
+            .ingest_service
+            .authorize_publish(identity, publish_topic)
+        {
+            Some(auth) => auth,
+            None => {
+                return publish.ack().reason_code(PublishAckReason::NotAuthorized);
+            }
+        };
+
+        let ingest_target = match authorization {
+            PublishAuthorization::Direct(target) | PublishAuthorization::Delegated(target) => {
+                target
+            }
+        };
+
+        if ingest_target.template_id.is_none() {
             return publish.ack().reason_code(PublishAckReason::NotAuthorized);
         }
 
@@ -61,48 +71,20 @@ impl MqttIngestService {
 
         match publish.read_all().await {
             Ok(payload) => {
-                let topic_template_id = extract_template_id(publish_topic);
-
-                if let Some(template_id) = topic_template_id {
-                    let mut conn = match self.pool.get() {
-                        Ok(conn) => conn,
-                        Err(err) => {
-                            log::error!("MQTT ingest DB connection error: {err:?}");
-                            return publish
-                                .ack()
-                                .reason_code(PublishAckReason::UnspecifiedError);
-                        }
-                    };
-
-                    let payload_json = serde_json::json!({
-                        "raw_bytes_b64": base64::encode_block(payload.as_ref()),
-                    });
-
-                    let insert_res = diesel::insert_into(crate::model::schema::data::table)
-                        .values(NewData {
-                            producer_id: identity.producer_id,
-                            template_id,
-                            payload: payload_json,
-                        })
-                        .execute(&mut conn);
-
-                    if let Err(err) = insert_res {
+                if let Some(template_id) = ingest_target.template_id {
+                    if let Err(err) = self
+                        .ingest_service
+                        .persist_payload(&ingest_target, payload.as_ref())
+                    {
                         log::warn!(
-                            "MQTT ingest insert failed producer_id={} topic={} error={err:?}",
-                            identity.producer_id,
-                            publish_topic
+                            "MQTT ingest persist failed producer_id={} topic={} template_id={} error={err:?}",
+                            ingest_target.producer_id,
+                            publish_topic,
+                            template_id,
                         );
                         return publish
                             .ack()
                             .reason_code(PublishAckReason::UnspecifiedError);
-                    }
-
-                    let producer_dao = PgProducerDao::new(self.pool.clone());
-                    if let Err(err) = producer_dao.update_last_seen(identity.producer_id) {
-                        log::warn!(
-                            "MQTT ingest last_seen update failed producer_id={} error={err:?}",
-                            identity.producer_id
-                        );
                     }
                 }
 
@@ -128,6 +110,7 @@ impl MqttIngestService {
     }
 }
 
+#[cfg(test)]
 fn extract_template_id(topic: &str) -> Option<Uuid> {
     let mut it = topic.split('/').filter(|s| !s.is_empty());
     let v = it.next()?;
@@ -148,4 +131,32 @@ fn extract_template_id(topic: &str) -> Option<Uuid> {
 
     let template_id = it.next()?;
     Uuid::parse_str(template_id).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::helpers::data_templates::RANDOMFLOAT_TEMPLATE_ID;
+
+    #[test]
+    fn test_extract_template_id_success() {
+        let topic = format!(
+            "/v1/users/user-a/groups/group-a/producers/prod-a/data_templates/{}",
+            RANDOMFLOAT_TEMPLATE_ID
+        );
+        let extracted = extract_template_id(&topic);
+        assert_eq!(
+            extracted,
+            Some(Uuid::parse_str(RANDOMFLOAT_TEMPLATE_ID).expect("valid uuid"))
+        );
+    }
+
+    #[test]
+    fn test_extract_template_id_wrong_section() {
+        let topic = format!(
+            "/v1/users/user-a/groups/group-a/producers/prod-a/other/{}",
+            RANDOMFLOAT_TEMPLATE_ID
+        );
+        assert_eq!(extract_template_id(&topic), None);
+    }
 }

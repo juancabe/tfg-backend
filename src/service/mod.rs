@@ -1,7 +1,9 @@
 pub mod auth;
 pub mod group;
+pub mod mqtt;
 pub mod producer;
 pub mod provisioning;
+pub mod template_data;
 
 use thiserror::Error;
 

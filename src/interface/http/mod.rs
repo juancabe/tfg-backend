@@ -75,6 +75,7 @@ pub mod extractor;
 pub mod group_controller;
 pub mod producer_controller;
 pub mod provisioning_controller;
+pub mod template_data_controller;
 
 pub struct Http {}
 
@@ -103,9 +104,14 @@ impl Http {
                     .delete(producer_controller::delete_producer_by_id),
             )
             .route(
+                "/producers/{id}/data",
+                get(template_data_controller::get_producer_data),
+            )
+            .route(
                 "/groups",
                 get(group_controller::get_groups).post(group_controller::post_group),
             )
+            .route("/templates", get(template_data_controller::get_templates))
             .route(
                 "/groups/{id}",
                 get(group_controller::get_group_by_id)
@@ -116,6 +122,10 @@ impl Http {
                 "/provisioning/pending",
                 get(provisioning_controller::get_pending)
                     .post(provisioning_controller::post_pending),
+            )
+            .route(
+                "/provisioning/groups/{group_id}/available-forwarders",
+                get(provisioning_controller::get_available_forwarders),
             )
             .route(
                 "/provisioning/pending/{id}/confirm",
