@@ -29,6 +29,8 @@ pub enum AuthDecision {
 pub struct ProducerIdentity {
     /// Producer database identifier.
     pub producer_id: Uuid,
+    /// MQTT username used to authenticate this session.
+    pub mqtt_username: String,
     /// Exact topic this producer is allowed to publish to.
     pub allowed_topic: String,
     /// Exact topic this producer is allowed to subscribe to.
@@ -84,6 +86,7 @@ impl<M: MqttDao> MqttAuthService<M> {
 
         AuthDecision::Allowed(ProducerIdentity {
             producer_id: auth_row.producer_id,
+            mqtt_username: auth_row.username,
             allowed_topic: auth_row.topic,
             allowed_subscribe_topic: auth_row.subscribe_topic,
         })
@@ -118,15 +121,31 @@ impl<M: MqttDao> MqttAuthService<M> {
         let parsed = ParsedDataTopic::parse(topic)?;
         let delegated = self
             .mqtt_dao
-            .find_delegated_publish_target(
+            .find_delegated_publish_target_by_producer(
                 identity.producer_id,
-                parsed.mqtt_username.as_str(),
                 parsed.group_name.as_str(),
                 parsed.producer_name.as_str(),
             )
             .ok()??;
 
-        if !topic_matches_filter(topic, &delegated.topic) {
+        let matches_delegated_username = parsed.mqtt_username == delegated.mqtt_username;
+        let matches_forwarder_username = parsed.mqtt_username == identity.mqtt_username;
+        if !matches_delegated_username && !matches_forwarder_username {
+            return None;
+        }
+
+        let topic_is_allowed = if matches_delegated_username {
+            topic_matches_filter(topic, &delegated.topic)
+        } else {
+            let forwarder_topic = replace_topic_username(
+                &delegated.topic,
+                delegated.mqtt_username.as_str(),
+                identity.mqtt_username.as_str(),
+            )?;
+            topic_matches_filter(topic, &forwarder_topic)
+        };
+
+        if !topic_is_allowed {
             return None;
         }
 
@@ -360,6 +379,31 @@ fn topic_matches_filter(topic: &str, filter: &str) -> bool {
     ti == topic_levels.len()
 }
 
+fn replace_topic_username(topic: &str, from_username: &str, to_username: &str) -> Option<String> {
+    let mut it = topic.split('/').filter(|s| !s.is_empty());
+    let v = it.next()?;
+    if v != "v1" {
+        return None;
+    }
+    let users = it.next()?;
+    if users != "users" {
+        return None;
+    }
+    let username = it.next()?;
+    if username != from_username {
+        return None;
+    }
+
+    let mut rebuilt = String::from("/v1/users/");
+    rebuilt.push_str(to_username);
+    for part in it {
+        rebuilt.push('/');
+        rebuilt.push_str(part);
+    }
+
+    Some(rebuilt)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -375,6 +419,7 @@ mod tests {
     fn mk_identity(producer_id: Uuid, allowed_topic: &str) -> ProducerIdentity {
         ProducerIdentity {
             producer_id,
+            mqtt_username: "test-user".to_string(),
             allowed_topic: allowed_topic.to_string(),
             allowed_subscribe_topic: "/v1/forbidden".to_string(),
         }
@@ -478,5 +523,69 @@ mod tests {
         let identity = mk_identity(forwarder.id, "/v1/forbidden");
 
         assert!(svc.authorize_publish(&identity, &attempted_topic).is_none());
+    }
+
+    #[test]
+    fn test_authorize_publish_delegated_allows_forwarder_username() {
+        let ctx = setup();
+        let owner = create_test_user(&ctx.pool, "mqtt_auth_delegate_forwarder_user");
+        let loc = create_test_location(&ctx.pool, "mqtt_auth_delegate_forwarder_user");
+        let group = create_test_group(&ctx.pool, owner.id, loc.id, "mqtt_auth_delegate_forwarder_user");
+
+        let forwarder = create_test_producer(&ctx.pool, group.id, loc.id, "forwarder");
+        let delegated = create_test_producer(&ctx.pool, group.id, loc.id, "delegated");
+
+        let mut conn = ctx.pool.get().expect("db conn");
+        diesel::update(crate::model::schema::producers::table.find(delegated.id))
+            .set(crate::model::schema::producers::forwarder_id.eq(Some(forwarder.id)))
+            .execute(&mut conn)
+            .expect("set delegated forwarder");
+
+        let template_id = Uuid::new_v4();
+        let delegated_username = "delegated-user".to_string();
+        let delegated_topic = format!(
+            "/v1/users/{}/groups/{}/producers/{}/data_templates/{}",
+            delegated_username, group.name, delegated.name, template_id
+        );
+
+        diesel::insert_into(crate::model::schema::mqtt_broker_auths::table)
+            .values(crate::model::models::NewMqttBrokerAuth {
+                producer_id: delegated.id,
+                broker_host: "localhost".to_string(),
+                broker_port: 1883,
+                username: delegated_username,
+                password_hash: "unused".to_string(),
+                topic: delegated_topic.clone(),
+                subscribe_topic: "/v1/forbidden".to_string(),
+            })
+            .execute(&mut conn)
+            .expect("insert delegated mqtt auth");
+        drop(conn);
+
+        let forwarder_username = "forwarder-user".to_string();
+        let forwarder_topic = format!(
+            "/v1/users/{}/groups/{}/producers/{}/data_templates/{}",
+            forwarder_username, group.name, delegated.name, template_id
+        );
+
+        let svc: MqttAuthService<PgMqttDao> = MqttAuthService::from(ctx.pool.clone());
+        let identity = ProducerIdentity {
+            producer_id: forwarder.id,
+            mqtt_username: forwarder_username,
+            allowed_topic: "/v1/forbidden".to_string(),
+            allowed_subscribe_topic: "/v1/forbidden".to_string(),
+        };
+
+        let authz = svc
+            .authorize_publish(&identity, &forwarder_topic)
+            .expect("forwarder username delegated publish should be authorized");
+
+        match authz {
+            PublishAuthorization::Delegated(target) => {
+                assert_eq!(target.producer_id, delegated.id);
+                assert_eq!(target.template_id, Some(template_id));
+            }
+            PublishAuthorization::Direct(_) => panic!("expected delegated authorization"),
+        }
     }
 }

@@ -59,6 +59,11 @@ fn publish_forwarder_peers_snapshot(
     }
 
     let peers = load_forwarder_peers(forwarder_peers_service, session.state().producer_id)?;
+
+    log::info!(
+        "Sending peers {peers:?} to: {:?}",
+        session.state().producer_id
+    );
     let payload = postcard::to_stdvec(&RecvPeersPayload(peers))
         .map_err(|err| format!("postcard encode failed: {err}"))?;
 

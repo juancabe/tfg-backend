@@ -9,6 +9,7 @@ use uuid::Uuid;
 pub struct DelegatedPublishTargetRow {
     pub producer_id: Uuid,
     pub topic: String,
+    pub mqtt_username: String,
 }
 
 pub trait MqttDao {
@@ -21,6 +22,13 @@ pub trait MqttDao {
         &self,
         forwarder_id: Uuid,
         mqtt_username_in: &str,
+        group_name_in: &str,
+        producer_name_in: &str,
+    ) -> Result<Option<DelegatedPublishTargetRow>, DaoError>;
+
+    fn find_delegated_publish_target_by_producer(
+        &self,
+        forwarder_id: Uuid,
         group_name_in: &str,
         producer_name_in: &str,
     ) -> Result<Option<DelegatedPublishTargetRow>, DaoError>;
@@ -85,11 +93,46 @@ impl MqttDao for PgMqttDao {
             .filter(producers::name.eq(producer_name_in))
             .filter(groups::name.eq(group_name_in))
             .filter(mqtt_broker_auths::username.eq(mqtt_username_in))
-            .select((producers::id, mqtt_broker_auths::topic))
-            .first::<(Uuid, String)>(conn)
+            .select((producers::id, mqtt_broker_auths::topic, mqtt_broker_auths::username))
+            .first::<(Uuid, String, String)>(conn)
             .optional()
             .map(|row| {
-                row.map(|(producer_id, topic)| DelegatedPublishTargetRow { producer_id, topic })
+                row.map(|(producer_id, topic, mqtt_username)| DelegatedPublishTargetRow {
+                    producer_id,
+                    topic,
+                    mqtt_username,
+                })
+            })
+            .map_err(Into::into)
+    }
+
+    fn find_delegated_publish_target_by_producer(
+        &self,
+        forwarder_id_in: Uuid,
+        group_name_in: &str,
+        producer_name_in: &str,
+    ) -> Result<Option<DelegatedPublishTargetRow>, DaoError> {
+        use crate::model::schema::{groups, mqtt_broker_auths, producers};
+
+        let conn = &mut self.pool.get()?;
+
+        producers::table
+            .inner_join(groups::table.on(groups::id.eq(producers::group_id)))
+            .inner_join(
+                mqtt_broker_auths::table.on(mqtt_broker_auths::producer_id.eq(producers::id)),
+            )
+            .filter(producers::forwarder_id.eq(Some(forwarder_id_in)))
+            .filter(producers::name.eq(producer_name_in))
+            .filter(groups::name.eq(group_name_in))
+            .select((producers::id, mqtt_broker_auths::topic, mqtt_broker_auths::username))
+            .first::<(Uuid, String, String)>(conn)
+            .optional()
+            .map(|row| {
+                row.map(|(producer_id, topic, mqtt_username)| DelegatedPublishTargetRow {
+                    producer_id,
+                    topic,
+                    mqtt_username,
+                })
             })
             .map_err(Into::into)
     }
