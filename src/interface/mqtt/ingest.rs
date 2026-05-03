@@ -2,9 +2,12 @@ use ntex_mqtt::v5::{self, codec::PublishAckReason};
 #[cfg(test)]
 use uuid::Uuid;
 
-use crate::{dao::DbPool, service::mqtt::MqttIngestService as DomainMqttIngestService};
-
-use super::auth::{ProducerIdentity, PublishAuthorization};
+use crate::{
+    dao::DbPool,
+    service::mqtt::{
+        MqttIngestService as DomainMqttIngestService, ProducerIdentity, PublishAuthorization,
+    },
+};
 
 pub const MAX_PAYLOAD_BYTES: usize = 4096;
 
@@ -71,21 +74,20 @@ impl MqttIngestService {
 
         match publish.read_all().await {
             Ok(payload) => {
-                if let Some(template_id) = ingest_target.template_id {
-                    if let Err(err) = self
+                if let Some(template_id) = ingest_target.template_id
+                    && let Err(err) = self
                         .ingest_service
                         .persist_payload(&ingest_target, payload.as_ref())
-                    {
-                        log::warn!(
-                            "MQTT ingest persist failed producer_id={} topic={} template_id={} error={err:?}",
-                            ingest_target.producer_id,
-                            publish_topic,
-                            template_id,
-                        );
-                        return publish
-                            .ack()
-                            .reason_code(PublishAckReason::UnspecifiedError);
-                    }
+                {
+                    log::warn!(
+                        "MQTT ingest persist failed producer_id={} topic={} template_id={} error={err:?}",
+                        ingest_target.producer_id,
+                        publish_topic,
+                        template_id,
+                    );
+                    return publish
+                        .ack()
+                        .reason_code(PublishAckReason::UnspecifiedError);
                 }
 
                 log::info!(

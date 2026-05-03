@@ -1,7 +1,6 @@
 //! DAO for user related identity persistence work
 
 use crate::dao::{DaoError, DbPool};
-use crate::helpers::users_auth::EmailPassFields;
 use crate::model::models::{EmailAuthMethod, NewEmailAuthMethod, NewRefreshToken, NewUser, User};
 use crate::model::schema;
 use diesel::prelude::*;
@@ -18,8 +17,8 @@ pub trait IdentityDao {
     /// finds [`User`] by `id`
     fn find_by_id(&self, id: Uuid) -> Result<Option<User>, DaoError>;
 
-    /// finds [`User`] by [`EmailPassFields`]
-    fn find_by_email_pass(&self, email_pass: EmailPassFields) -> Result<Option<User>, DaoError>;
+    /// finds [`User`] and stored hash by email
+    fn find_by_email(&self, email_in: &str) -> Result<Option<(User, String)>, DaoError>;
 
     /// inserts a [`NewEmailAuthMethod`] in db `email_auth_methods` table
     fn add_email_auth_method(&self, auth: NewEmailAuthMethod) -> Result<EmailAuthMethod, DaoError>;
@@ -122,17 +121,16 @@ impl IdentityDao for PgIdentityDao {
         Ok(count > 0)
     }
 
-    fn find_by_email_pass(&self, email_pass: EmailPassFields) -> Result<Option<User>, DaoError> {
+    fn find_by_email(&self, email_in: &str) -> Result<Option<(User, String)>, DaoError> {
         use crate::model::schema::email_auth_methods::dsl::*;
         let conn = &mut self.pool.get()?;
-        let user = email_auth_methods
+        let res = email_auth_methods
             .inner_join(schema::users::table)
-            .filter(email.eq(email_pass.email))
-            .filter(hashed_pass.eq(email_pass.hashed_pass))
-            .select(User::as_select())
-            .first(conn)
+            .filter(email.eq(email_in))
+            .select((User::as_select(), hashed_pass))
+            .first::<(User, String)>(conn)
             .optional()?;
-        Ok(user)
+        Ok(res)
     }
 }
 
@@ -260,7 +258,7 @@ mod tests {
         }
 
         #[test]
-        fn test_find_by_email_pass() {
+        fn test_find_by_email() {
             let ctx = setup();
             let dao = PgIdentityDao::new(ctx.pool.clone());
             let user = create_test_user(&ctx.pool, "find_email_pass");
@@ -274,26 +272,22 @@ mod tests {
             .expect("Failed to add auth method");
 
             let found = dao
-                .find_by_email_pass(EmailPassFields {
-                    email: email.to_string(),
-                    hashed_pass: pass.to_string(),
-                })
+                .find_by_email(email)
                 .expect("Failed to find user");
 
             assert!(found.is_some());
-            assert_eq!(found.unwrap().id, user.id);
+            let (found_user, found_hash) = found.unwrap();
+            assert_eq!(found_user.id, user.id);
+            assert_eq!(found_hash, pass);
         }
 
         #[test]
-        fn test_find_by_email_pass_not_found() {
+        fn test_find_by_email_not_found() {
             let ctx = setup();
             let dao = PgIdentityDao::new(ctx.pool.clone());
 
             let found = dao
-                .find_by_email_pass(EmailPassFields {
-                    email: "non_existent@example.com".to_string(),
-                    hashed_pass: "wrong_password".to_string(),
-                })
+                .find_by_email("non_existent@example.com")
                 .expect("Failed to find user");
 
             assert!(found.is_none());
@@ -396,14 +390,12 @@ mod tests {
 
             // 3. Login (find by email/pass)
             let found = dao
-                .find_by_email_pass(EmailPassFields {
-                    email: "flow@example.com".to_string(),
-                    hashed_pass: "secret".to_string(),
-                })
+                .find_by_email("flow@example.com")
                 .unwrap()
                 .expect("User should be found");
 
-            assert_eq!(found.id, user.id);
+            assert_eq!(found.0.id, user.id);
+            assert_eq!(found.1, "secret");
         }
 
         #[test]

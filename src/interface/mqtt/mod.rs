@@ -3,8 +3,6 @@
 //! This module hosts the ingest-focused broker implementation and its
 //! authentication/ingestion subcomponents.
 
-/// Database-backed MQTT authentication helpers.
-pub mod auth;
 /// Publish ingestion and authorization-aware ack behavior.
 pub mod ingest;
 /// Embedded MQTT broker bootstrap and runtime wiring.

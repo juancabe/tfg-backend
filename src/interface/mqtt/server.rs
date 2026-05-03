@@ -13,12 +13,12 @@ use ntex_mqtt::{
 use openssl::ssl::{self, SslFiletype, SslMethod};
 use thiserror::Error;
 
-use crate::{dao::DbPool, service::mqtt::MqttForwarderPeersService};
-
-use super::{
-    auth::{AuthDecision, MqttAuthService, ProducerIdentity},
-    ingest::MqttIngestService,
+use crate::{
+    dao::DbPool,
+    service::mqtt::{AuthDecision, MqttAuthService, MqttForwarderPeersService, ProducerIdentity},
 };
+
+use super::ingest::MqttIngestService;
 use crate::dao::mqtt::PgMqttDao;
 
 #[cfg(test)]

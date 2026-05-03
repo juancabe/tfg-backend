@@ -27,3 +27,4 @@ utoipa = { version = "5.4.0", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "9.0.2", features = ["axum", "vendored"] }
 uuid = { version = "1.21.0", features = ["serde", "v4"] }
 common-types = { path = "../common-types" }
+bcrypt = "0.19.0"

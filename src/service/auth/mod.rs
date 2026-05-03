@@ -71,12 +71,17 @@ impl<D: IdentityDao> AuthService<D> {
                 };
 
                 // TODO: Check verified email
-                let user = if let Some(user) = self._dao.find_by_email_pass(email_pass)? {
-                    user
+                let (user, stored_hash) = if let Some(res) = self._dao.find_by_email(&email_pass.email)? {
+                    res
                 } else {
                     log::info!("[authenticate_user] no user found");
                     return Ok(None);
                 };
+
+                if !crate::helpers::crypto_password::verify_password(&stored_hash, &email_pass.hashed_pass) {
+                    log::info!("[authenticate_user] password mismatch");
+                    return Ok(None);
+                }
 
                 let jwt_kind = JWTKind::Refresh;
                 let (iat, exp) = jwt_kind.get_iat_exp();
@@ -227,10 +232,13 @@ impl<D: IdentityDao> AuthService<D> {
         if let Err(e) = match input.auth_method {
             AuthMethod::EmailPass(email_pass) => match email_pass {
                 crate::helpers::users_auth::EmailPass::Fields(email_pass_fields) => {
+                    let hashed_pass = crate::helpers::crypto_password::hash_password(&email_pass_fields.hashed_pass)
+                        .map_err(|e| ServiceError::DbError(crate::dao::DaoError::OtherRare(format!("Bcrypt hash error: {e}"))))?;
+                    
                     let auth = NewEmailAuthMethod {
                         user_id: user.id,
                         email: &email_pass_fields.email,
-                        hashed_pass: &email_pass_fields.hashed_pass,
+                        hashed_pass: &hashed_pass,
                     };
                     self._dao.add_email_auth_method(auth).map(|_| ())
                     // TODO: Send email with verification challenge
