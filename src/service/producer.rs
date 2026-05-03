@@ -207,7 +207,8 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> Produc
                 ),
             );
         }
-.Ok(crate::interface::types::producer::Producer::from_producer_location(producer, location))        let update = ProducerUpdate {
+
+        let update = ProducerUpdate {
             name: patch.name,
             description: patch.description,
             last_seen: None,
