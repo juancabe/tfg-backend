@@ -341,7 +341,6 @@ mod tests {
                     producer: UpdateProducer {
                         name: Some("Updated Producer".to_string()),
                         description: Some("Updated desc".to_string()),
-                        group_id: None,
                     },
                 }),
             )
@@ -373,7 +372,6 @@ mod tests {
                     producer: UpdateProducer {
                         name: Some("Updated Producer".to_string()),
                         description: None,
-                        group_id: None,
                     },
                 }),
             )

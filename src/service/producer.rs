@@ -108,7 +108,7 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> Produc
         self.producer_dao
             .create_producer(model_new_producer)
             .map_err(Into::into)
-            .map(|p| p.into())
+            .map(|p| crate::interface::types::producer::Producer::from_producer_location(p, loc))
     }
 
     /// Only returns the producer when the user has visibility permissions
@@ -120,10 +120,16 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> Produc
 
         let group = self.group_dao.get_group(producer.group_id)?;
 
+        let location = self.location_dao.get_location(producer.location_id)?;
+
         if group.owner_user_id != user_id && !group.is_public {
             Err(ServiceError::Forbidden)
         } else {
-            Ok(producer.into())
+            Ok(
+                crate::interface::types::producer::Producer::from_producer_location(
+                    producer, location,
+                ),
+            )
         }
     }
 
@@ -138,7 +144,15 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> Produc
                 let producers = self
                     .producer_dao
                     .get_by_group_id(g.id)
-                    .map(|v| v.into_iter().map(Producer::from).collect())
+                    .and_then(|ps| {
+                        ps.into_iter()
+                            .map(|p| {
+                                self.location_dao
+                                    .get_location(p.location_id)
+                                    .map(|l| Producer::from_producer_location(p, l))
+                            })
+                            .collect()
+                    })
                     .map_err(ServiceError::from)?;
                 Ok((Group::from(g), producers))
             })
@@ -175,15 +189,6 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> Produc
             Err(ServiceError::Forbidden)?
         }
 
-        if let Some(target_group_id) = patch.group_id {
-            let target_group = self.group_dao.get_group(target_group_id)?;
-            if target_group.owner_user_id != user_id {
-                Err(ServiceError::Forbidden)?
-            }
-            self.producer_dao
-                .update_group(producer_id, target_group_id)?;
-        }
-
         if let Some(ref name) = patch.name {
             validate_firmware_compatible_name(name, "name")?;
         }
@@ -191,14 +196,18 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> Produc
         let has_metadata_patch = patch.name.is_some() || patch.description.is_some();
 
         if !has_metadata_patch {
-            return self
+            let producer = self
                 .producer_dao
                 .get_by_id(producer_id)?
-                .ok_or(ServiceError::NotFound)
-                .map(Into::into);
+                .ok_or(ServiceError::NotFound)?;
+            let location = self.location_dao.get_location(producer.location_id)?;
+            return Ok(
+                crate::interface::types::producer::Producer::from_producer_location(
+                    producer, location,
+                ),
+            );
         }
-
-        let update = ProducerUpdate {
+.Ok(crate::interface::types::producer::Producer::from_producer_location(producer, location))        let update = ProducerUpdate {
             name: patch.name,
             description: patch.description,
             last_seen: None,
@@ -207,10 +216,9 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> Produc
             forward_lora: None,
         };
 
-        self.producer_dao
-            .update_metadata(producer_id, update)
-            .map_err(Into::into)
-            .map(Into::into)
+        let producer = self.producer_dao.update_metadata(producer_id, update)?;
+        let location = self.location_dao.get_location(producer.location_id)?;
+        Ok(crate::interface::types::producer::Producer::from_producer_location(producer, location))
     }
 
     pub fn rotate_credentials(
@@ -494,37 +502,12 @@ mod tests {
                     crate::interface::types::producer::UpdateProducer {
                         name: Some("UpdatedProducer".to_string()),
                         description: Some("Updated desc".to_string()),
-                        group_id: None,
                     },
                 )
                 .expect("Failed to update producer");
 
             assert_eq!(updated.name, "UpdatedProducer");
             assert_eq!(updated.description, "Updated desc");
-        }
-
-        #[test]
-        fn test_update_producer_move_group_success() {
-            let (ctx, service) = setup_service();
-            let user = create_test_user(&ctx.pool, "upd_move_owner");
-            let location = create_test_location(&ctx.pool, "upd_move_loc");
-            let group1 = create_test_group(&ctx.pool, user.id, location.id, "upd_move_g1");
-            let group2 = create_test_group(&ctx.pool, user.id, location.id, "upd_move_g2");
-            let producer = create_test_producer(&ctx.pool, group1.id, location.id, "upd_move_p");
-
-            let updated = service
-                .update_producer(
-                    user.id,
-                    producer.id,
-                    crate::interface::types::producer::UpdateProducer {
-                        name: None,
-                        description: None,
-                        group_id: Some(group2.id),
-                    },
-                )
-                .expect("Failed moving producer");
-
-            assert_eq!(updated.group_id, group2.id);
         }
 
         #[test]
@@ -541,7 +524,6 @@ mod tests {
                 crate::interface::types::producer::UpdateProducer {
                     name: Some("has+plus".to_string()),
                     description: None,
-                    group_id: None,
                 },
             );
 
@@ -563,7 +545,6 @@ mod tests {
                 crate::interface::types::producer::UpdateProducer {
                     name: Some("UpdatedProducer".to_string()),
                     description: None,
-                    group_id: None,
                 },
             );
 

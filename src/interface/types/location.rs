@@ -9,6 +9,13 @@ pub enum Error {
     InvalidPartialLocation,
 }
 
+#[derive(Serialize, Deserialize, Debug, utoipa::ToSchema)]
+pub struct Location {
+    pub name: Option<String>,
+    pub geo_lat: Option<f64>,
+    pub geo_long: Option<f64>,
+}
+
 #[derive(Deserialize, Serialize, Debug, utoipa::ToSchema)]
 pub struct NewLocation {
     pub name: Option<String>,
