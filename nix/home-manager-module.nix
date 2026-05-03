@@ -65,9 +65,6 @@ in {
 
         EnvironmentFile = cfg.envFile;
 
-        ExecStartPre = [
-          "${pkgs.diesel-cli}/bin/diesel migration run --migration-dir ${cfg.package}/share/migrations"
-        ];
         ExecStart = "${cfg.package}/bin/main";
         Restart = "always";
       };

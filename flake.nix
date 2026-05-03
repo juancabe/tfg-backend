@@ -35,10 +35,7 @@
           nativeBuildInputs = [ pkgs.pkg-config ];
           buildInputs = [ pkgs.openssl pgPackage ];
           doCheck = false;
-          postInstall = ''
-            mkdir -p $out/share
-            cp -r migrations $out/share/migrations
-          '';
+          postInstall = "";
         };
 
         devShell = import ./nix/dev.nix {

@@ -1,4 +1,5 @@
 use diesel::{PgConnection, r2d2::ConnectionManager};
+use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use dotenvy::dotenv;
 use std::env;
 use std::net::{Ipv4Addr, SocketAddrV4};
@@ -8,6 +9,16 @@ use tokio::sync::oneshot;
 use backend::dao::{DbPool, MAX_DB_POOL_SIZE};
 use backend::interface::http::{self, DEFAULT_PORT};
 use backend::interface::mqtt::{MqttBroker, MqttBrokerConfig};
+
+const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
+
+fn run_migrations(pool: &DbPool) {
+    let mut conn = pool.get().expect("Failed to get DB conn");
+    let migrations = conn
+        .run_pending_migrations(MIGRATIONS)
+        .expect("Failed to run migrations");
+    log::info!("Ran DB migrations: {migrations:?}");
+}
 
 #[tokio::main]
 async fn main() {
@@ -23,6 +34,7 @@ async fn main() {
 
     // Log DB pool configuration at startup for diagnostics
     log::info!("DB pool created: max_size={}", MAX_DB_POOL_SIZE);
+    run_migrations(&pool);
 
     let http_listen_address =
         std::net::SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, DEFAULT_PORT));
