@@ -25,7 +25,13 @@
           pname = "backend";
           version = "0.1.0";
           src = ./.;
-          cargoLock.lockFile = ./Cargo.lock;
+          cargoLock = {
+            lockFile = ./Cargo.lock;
+            outputHashes = {
+              "postcard-1.1.3" = "sha256-YSxBz5mv4IbLgHgZxeKXRw3t1wl1W3Zq/dTTLiv/x44=";
+              "common-types-0.1.0" = "sha256-8tp8FMk7UhBktzc3bFPR8N+lZ5i46V7cEQ6qE48SMEo=";
+            };
+          };
           nativeBuildInputs = [ pkgs.pkg-config ];
           buildInputs = [ pkgs.openssl pgPackage ];
           doCheck = false;
