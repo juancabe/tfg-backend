@@ -94,6 +94,10 @@ impl Http {
             .route("/auth/register", post(auth_controller::post_register))
             .route("/auth/refresh", post(auth_controller::post_refresh))
             .route(
+                "/auth/change-password",
+                post(auth_controller::post_change_password),
+            )
+            .route(
                 "/producers",
                 get(producer_controller::get_producers).post(producer_controller::post_producer),
             )

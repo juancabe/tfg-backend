@@ -5,6 +5,7 @@ use crate::model::models::{EmailAuthMethod, NewEmailAuthMethod, NewRefreshToken,
 use crate::model::schema;
 use diesel::prelude::*;
 use diesel::{ExpressionMethods, RunQueryDsl, SelectableHelper};
+use chrono::Utc;
 use uuid::Uuid;
 
 pub trait IdentityDao {
@@ -19,6 +20,19 @@ pub trait IdentityDao {
 
     /// finds [`User`] and stored hash by email
     fn find_by_email(&self, email_in: &str) -> Result<Option<(User, String)>, DaoError>;
+
+    /// finds [`EmailAuthMethod`] by `user_id`
+    fn find_email_auth_by_user_id(
+        &self,
+        user_id: &Uuid,
+    ) -> Result<Option<EmailAuthMethod>, DaoError>;
+
+    /// updates stored hash for [`EmailAuthMethod`] by `user_id`
+    fn update_email_password(
+        &self,
+        user_id: &Uuid,
+        hashed_pass: &str,
+    ) -> Result<EmailAuthMethod, DaoError>;
 
     /// inserts a [`NewEmailAuthMethod`] in db `email_auth_methods` table
     fn add_email_auth_method(&self, auth: NewEmailAuthMethod) -> Result<EmailAuthMethod, DaoError>;
@@ -131,6 +145,37 @@ impl IdentityDao for PgIdentityDao {
             .first::<(User, String)>(conn)
             .optional()?;
         Ok(res)
+    }
+
+    fn find_email_auth_by_user_id(
+        &self,
+        user_id_in: &Uuid,
+    ) -> Result<Option<EmailAuthMethod>, DaoError> {
+        use crate::model::schema::email_auth_methods::dsl::*;
+        let conn = &mut self.pool.get()?;
+        email_auth_methods
+            .filter(user_id.eq(user_id_in))
+            .select(EmailAuthMethod::as_select())
+            .first(conn)
+            .optional()
+            .map_err(Into::into)
+    }
+
+    fn update_email_password(
+        &self,
+        user_id_in: &Uuid,
+        hashed_pass_in: &str,
+    ) -> Result<EmailAuthMethod, DaoError> {
+        use crate::model::schema::email_auth_methods::dsl::*;
+        let conn = &mut self.pool.get()?;
+        diesel::update(email_auth_methods.filter(user_id.eq(user_id_in)))
+            .set((
+                hashed_pass.eq(hashed_pass_in),
+                changed_pass_at.eq(Utc::now()),
+            ))
+            .returning(EmailAuthMethod::as_returning())
+            .get_result(conn)
+            .map_err(Into::into)
     }
 }
 
@@ -291,6 +336,27 @@ mod tests {
                 .expect("Failed to find user");
 
             assert!(found.is_none());
+        }
+
+        #[test]
+        fn test_update_email_password() {
+            let ctx = setup();
+            let dao = PgIdentityDao::new(ctx.pool.clone());
+            let user = create_test_user(&ctx.pool, "update_email_pass");
+            let email = "test@example.com";
+            dao.add_email_auth_method(NewEmailAuthMethod {
+                user_id: user.id,
+                email,
+                hashed_pass: "old_pass",
+            })
+            .expect("Failed to add auth method");
+
+            let updated = dao
+                .update_email_password(&user.id, "new_pass")
+                .expect("Failed to update password");
+
+            assert_eq!(updated.user_id, user.id);
+            assert_eq!(updated.hashed_pass, "new_pass");
         }
 
         #[test]

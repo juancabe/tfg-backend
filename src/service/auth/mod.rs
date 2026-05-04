@@ -7,6 +7,7 @@ use crate::model::models::{NewEmailAuthMethod, NewUser};
 use crate::service::ServiceError;
 use crate::{dao::identity::IdentityDao, model::models::NewRefreshToken};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 pub struct LoginInput {
     auth_method: AuthMethod,
@@ -24,6 +25,22 @@ impl From<LoginPayload> for LoginInput {
 pub struct RegisterInput {
     login: String,
     auth_method: AuthMethod,
+}
+
+pub struct ChangePasswordInput {
+    user_id: Uuid,
+    current_password: String,
+    new_password: String,
+}
+
+impl ChangePasswordInput {
+    pub fn new(user_id: Uuid, current_password: String, new_password: String) -> Self {
+        Self {
+            user_id,
+            current_password,
+            new_password,
+        }
+    }
 }
 
 impl From<RegisterPayload> for RegisterInput {
@@ -255,6 +272,78 @@ impl<D: IdentityDao> AuthService<D> {
 
         // TODO: Auth methods that don't require a confirmation's Session Tokens may be returned here
         Ok(RegisterResponse::Success)
+    }
+
+    /// change_password
+    ///
+    /// # Description
+    /// Given a [`ChangePasswordInput`], validates the current password, updates it,
+    /// and returns a fresh session/refresh token pair.
+    pub fn change_password(&self, input: ChangePasswordInput) -> Result<TokenPair, ServiceError> {
+        let auth = self
+            ._dao
+            .find_email_auth_by_user_id(&input.user_id)?
+            .ok_or(ServiceError::Forbidden)?;
+
+        if !crate::helpers::crypto_password::verify_password(
+            &auth.hashed_pass,
+            &input.current_password,
+        ) {
+            return Err(ServiceError::Forbidden);
+        }
+
+        let hashed_pass = crate::helpers::crypto_password::hash_password(&input.new_password)
+            .map_err(|e| {
+                ServiceError::DbError(crate::dao::DaoError::OtherRare(format!(
+                    "Bcrypt hash error: {e}"
+                )))
+            })?;
+
+        self._dao
+            .update_email_password(&input.user_id, &hashed_pass)
+            .map_err(ServiceError::from)?;
+
+        let user = self
+            ._dao
+            .find_by_id(input.user_id)?
+            .ok_or(ServiceError::Forbidden)?;
+
+        let jwt_kind = JWTKind::Refresh;
+        let (iat, exp) = jwt_kind.get_iat_exp();
+        let new_token = NewRefreshToken {
+            user_id: user.id,
+            expires_at: exp,
+        };
+        let version_n = self._dao.rotate_refresh_token(new_token)?;
+
+        let refresh_token = JWT::new(
+            version_n,
+            user.login.clone(),
+            user.id,
+            jwt_kind,
+            iat.timestamp(),
+            exp.timestamp(),
+        );
+
+        let jwt_kind = JWTKind::Session;
+        let (iat, exp) = jwt_kind.get_iat_exp();
+        let access_token = JWT::new(
+            version_n,
+            user.login,
+            user.id,
+            jwt_kind,
+            iat.timestamp(),
+            exp.timestamp(),
+        );
+
+        let key = JWT::get_enc_key();
+        let refresh_token = refresh_token.encode(key)?;
+        let access_token = access_token.encode(key)?;
+
+        Ok(TokenPair {
+            session_token: access_token,
+            refresh_token,
+        })
     }
 }
 

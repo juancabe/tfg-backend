@@ -1,11 +1,11 @@
 //! AuthController
 //!
-//! Defines handlers for "/login", "/register" and "/refresh" endpoints
+//! Defines handlers for "/login", "/register", "/refresh" and "/change-password" endpoints
 
 use crate::{
     dao::identity::PgIdentityDao,
     helpers::{http_app_state::AppState, users_auth::AuthMethod},
-    service::auth::{AuthService, RefreshSessionOut, TokenPair},
+    service::auth::{AuthService, ChangePasswordInput, RefreshSessionOut, TokenPair, JWT},
 };
 
 use super::HttpApiError;
@@ -79,6 +79,19 @@ impl IntoResponse for LoginResponse {
 
 #[derive(Deserialize, Serialize, Debug, utoipa::ToSchema)]
 pub struct CorrectLoginResponse {
+    pub session_token: String,
+    pub refresh_token: String,
+}
+
+#[derive(Deserialize, utoipa::ToSchema)]
+/// Accepts current and new password for change
+pub struct ChangePasswordPayload {
+    pub current_password: String,
+    pub new_password: String,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct ChangePasswordResponse {
     pub session_token: String,
     pub refresh_token: String,
 }
@@ -158,6 +171,37 @@ pub async fn post_login(
     } else {
         Ok(LoginResponse::InvalidCredentials)
     }
+}
+
+/// `post_change_password`
+///
+/// Changes the current user's password using the session token
+#[utoipa::path(
+    post,
+    path = "/auth/change-password",
+    tag = "auth",
+    request_body(content = ChangePasswordPayload, description = "Current and new password"),
+    responses((status = 200, description = "Password changed", body = ChangePasswordResponse)),
+    security(("bearer_auth" = []))
+)]
+pub async fn post_change_password(
+    jwt: JWT,
+    State(AppState { pool }): State<AppState>,
+    payload: Result<Json<ChangePasswordPayload>, JsonRejection>,
+) -> Result<Json<ChangePasswordResponse>, HttpApiError> {
+    let payload = payload?.0;
+    let dao = PgIdentityDao::new(pool);
+    let service = AuthService::new(dao);
+    let input = ChangePasswordInput::new(
+        jwt.user_id,
+        payload.current_password,
+        payload.new_password,
+    );
+    let tokens = service.change_password(input)?;
+    Ok(Json(ChangePasswordResponse {
+        session_token: tokens.session_token,
+        refresh_token: tokens.refresh_token,
+    }))
 }
 
 #[cfg(test)]
@@ -465,6 +509,61 @@ mod tests {
                 auth_controller::post_refresh(state, Ok(Json(RefreshPayload { refresh_token })))
                     .await;
             assert!(res2.is_err());
+        }
+
+        #[tokio::test]
+        async fn test_post_change_password_success() {
+            let ctx = setup();
+            let state = State(AppState {
+                pool: ctx.pool.clone(),
+            });
+
+            let register_payload = RegisterPayload {
+                login: "test_user".to_string(),
+                auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                    email: "test@example.com".to_string(),
+                    hashed_pass: "password".to_string(),
+                })),
+            };
+            let _ = auth_controller::post_register(state.clone(), Ok(Json(register_payload)))
+                .await
+                .unwrap();
+
+            let login_payload = LoginPayload {
+                auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                    email: "test@example.com".to_string(),
+                    hashed_pass: "password".to_string(),
+                })),
+            };
+            let login_res = auth_controller::post_login(state.clone(), Ok(Json(login_payload)))
+                .await
+                .unwrap();
+            let session_token = if let LoginResponse::Correct(tokens) = login_res {
+                tokens.session_token
+            } else {
+                panic!("Login failed");
+            };
+
+            let service = AuthService::new(PgIdentityDao::new(ctx.pool.clone()));
+            let jwt = service.validate_session(&session_token).unwrap();
+
+            let payload = Ok(Json(ChangePasswordPayload {
+                current_password: "password".to_string(),
+                new_password: "new_password".to_string(),
+            }));
+
+            let res = auth_controller::post_change_password(jwt, state.clone(), payload)
+                .await
+                .unwrap();
+            assert!(!res.0.session_token.is_empty());
+            assert!(!res.0.refresh_token.is_empty());
+
+            let service = AuthService::new(PgIdentityDao::new(ctx.pool.clone()));
+            let old_session_valid = service.validate_session(&session_token).is_ok();
+            assert!(!old_session_valid);
+
+            let new_session_valid = service.validate_session(&res.0.session_token).is_ok();
+            assert!(new_session_valid);
         }
     }
 }

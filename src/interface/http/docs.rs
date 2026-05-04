@@ -48,6 +48,7 @@ impl Modify for SecurityAddon {
         auth_controller::post_login,
         auth_controller::post_register,
         auth_controller::post_refresh,
+        auth_controller::post_change_password,
         producer_controller::get_producers,
         producer_controller::get_producer_by_id,
         producer_controller::post_producer,
@@ -76,6 +77,8 @@ impl Modify for SecurityAddon {
             auth_controller::LoginPayload,
             auth_controller::LoginResponse,
             auth_controller::CorrectLoginResponse,
+            auth_controller::ChangePasswordPayload,
+            auth_controller::ChangePasswordResponse,
             AuthMethod,
 
             producer_controller::GetProducersResponse,
