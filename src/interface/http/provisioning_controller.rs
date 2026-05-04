@@ -4,6 +4,7 @@ use axum::{
     http::StatusCode,
 };
 use uuid::Uuid;
+use validator::Validate;
 
 use crate::{
     helpers::http_app_state::AppState,
@@ -32,6 +33,11 @@ pub async fn post_pending(
     State(AppState { pool }): State<AppState>,
     Json(body): Json<CreatePendingProvisioningRequest>,
 ) -> Result<(StatusCode, Json<CreatePendingProvisioningResponse>), HttpApiError> {
+    body.validate().map_err(|e| {
+        HttpApiError::ServiceError(crate::service::ServiceError::TypeError(
+            crate::interface::types::TypeError::Validation(e.to_string()),
+        ))
+    })?;
     let service: ProvisioningService<_, _, _, _> = pool.into();
     let created = service.create_pending(jwt.user_id, body)?;
     Ok((StatusCode::CREATED, Json(created)))
@@ -86,6 +92,11 @@ pub async fn post_pending_confirm(
     Path(id): Path<Uuid>,
     Json(body): Json<ConfirmPendingProvisioningRequest>,
 ) -> Result<Json<ConfirmPendingProvisioningResponse>, HttpApiError> {
+    body.validate().map_err(|e| {
+        HttpApiError::ServiceError(crate::service::ServiceError::TypeError(
+            crate::interface::types::TypeError::Validation(e.to_string()),
+        ))
+    })?;
     let service: ProvisioningService<_, _, _, _> = pool.into();
     let out = service.confirm_pending(jwt.user_id, id, body)?;
     Ok(Json(out))
@@ -252,6 +263,28 @@ mod tests {
             mock_jwt(user.id, user.login.clone()),
             state(ctx.pool.clone()),
             Json(mk_pending_req(group.id, Some(Uuid::new_v4()))),
+        )
+        .await;
+
+        assert!(res.is_err());
+        let response = res.unwrap_err().into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_create_pending_rejects_invalid_name() {
+        let ctx = setup();
+        let user = create_test_user(&ctx.pool, "prov_bad_name");
+        let loc = create_test_location(&ctx.pool, "prov_bad_name");
+        let group = create_test_group(&ctx.pool, user.id, loc.id, "prov_bad_name");
+
+        let mut req = mk_pending_req(group.id, None);
+        req.producer_name = "bad/name".to_string();
+
+        let res = post_pending(
+            mock_jwt(user.id, user.login.clone()),
+            state(ctx.pool.clone()),
+            Json(req),
         )
         .await;
 

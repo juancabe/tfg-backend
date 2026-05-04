@@ -7,6 +7,7 @@ use crate::{
     helpers::{http_app_state::AppState, users_auth::AuthMethod},
     service::auth::{AuthService, ChangePasswordInput, RefreshSessionOut, TokenPair, JWT},
 };
+use crate::helpers::validation::{LOGIN_MAX_LEN, LOGIN_MIN_LEN, PASSWORD_MAX_LEN, PASSWORD_MIN_LEN};
 
 use super::HttpApiError;
 
@@ -17,13 +18,15 @@ use axum::{
     response::IntoResponse,
 };
 use serde::{Deserialize, Serialize};
+use validator::Validate;
 use axum::extract::Query;
 use axum::response::Html;
 use uuid::Uuid;
 
-#[derive(Deserialize, utoipa::ToSchema)]
+#[derive(Deserialize, utoipa::ToSchema, Validate)]
 /// Holds a JWT refresh token hash
 pub struct RefreshPayload {
+    #[validate(length(min = 8, max = 2048))]
     pub refresh_token: String,
 }
 
@@ -43,9 +46,10 @@ impl From<RefreshSessionOut> for RefreshSessionResponse {
     }
 }
 
-#[derive(Deserialize, utoipa::ToSchema)]
+#[derive(Deserialize, utoipa::ToSchema, Validate)]
 /// Accepts a unique `login` and [`AuthMethod`]
 pub struct RegisterPayload {
+    #[validate(length(min = LOGIN_MIN_LEN, max = LOGIN_MAX_LEN))]
     pub login: String,
     pub auth_method: AuthMethod,
 }
@@ -57,7 +61,7 @@ pub enum RegisterResponse {
     NeedsVerification,
 }
 
-#[derive(Deserialize, utoipa::ToSchema, Debug)]
+#[derive(Deserialize, utoipa::ToSchema, Debug, Validate)]
 /// Accepts the [`AuthMethod`] that'll be used to login
 pub struct LoginPayload {
     pub auth_method: AuthMethod,
@@ -86,10 +90,12 @@ pub struct CorrectLoginResponse {
     pub refresh_token: String,
 }
 
-#[derive(Deserialize, utoipa::ToSchema)]
+#[derive(Deserialize, utoipa::ToSchema, Validate)]
 /// Accepts current and new password for change
 pub struct ChangePasswordPayload {
+    #[validate(length(min = PASSWORD_MIN_LEN, max = PASSWORD_MAX_LEN))]
     pub current_password: String,
+    #[validate(length(min = PASSWORD_MIN_LEN, max = PASSWORD_MAX_LEN))]
     pub new_password: String,
 }
 
@@ -128,7 +134,13 @@ pub async fn post_refresh(
     State(AppState { pool }): State<AppState>,
     payload: Result<Json<RefreshPayload>, JsonRejection>,
 ) -> Result<Json<RefreshSessionResponse>, HttpApiError> {
-    let payload_refresh = &payload?.refresh_token;
+    let payload = payload?.0;
+    payload.validate().map_err(|e| {
+        HttpApiError::ServiceError(crate::service::ServiceError::TypeError(
+            crate::interface::types::TypeError::Validation(e.to_string()),
+        ))
+    })?;
+    let payload_refresh = &payload.refresh_token;
     let dao = PgIdentityDao::new(pool);
     let service = AuthService::new(dao);
     let output = service.refresh_session(payload_refresh)?;
@@ -151,6 +163,16 @@ pub async fn post_register(
     payload: Result<Json<RegisterPayload>, JsonRejection>,
 ) -> Result<Json<RegisterResponse>, HttpApiError> {
     let payload = payload?.0;
+    payload.validate().map_err(|e| {
+        HttpApiError::ServiceError(crate::service::ServiceError::TypeError(
+            crate::interface::types::TypeError::Validation(e.to_string()),
+        ))
+    })?;
+    payload.auth_method.validate().map_err(|e| {
+        HttpApiError::ServiceError(crate::service::ServiceError::TypeError(
+            crate::interface::types::TypeError::Validation(e.to_string()),
+        ))
+    })?;
     let dao = PgIdentityDao::new(pool);
     let service = AuthService::new(dao);
     let created = service.register_user(payload.into())?;
@@ -172,6 +194,16 @@ pub async fn post_login(
     payload: Result<Json<LoginPayload>, JsonRejection>,
 ) -> Result<LoginResponse, HttpApiError> {
     let payload = payload?.0;
+    payload.validate().map_err(|e| {
+        HttpApiError::ServiceError(crate::service::ServiceError::TypeError(
+            crate::interface::types::TypeError::Validation(e.to_string()),
+        ))
+    })?;
+    payload.auth_method.validate().map_err(|e| {
+        HttpApiError::ServiceError(crate::service::ServiceError::TypeError(
+            crate::interface::types::TypeError::Validation(e.to_string()),
+        ))
+    })?;
     log::info!("[post_login] with:  {:?}", payload);
     let dao = PgIdentityDao::new(pool);
     let service = AuthService::new(dao);
@@ -199,6 +231,11 @@ pub async fn post_change_password(
     payload: Result<Json<ChangePasswordPayload>, JsonRejection>,
 ) -> Result<Json<ChangePasswordResponse>, HttpApiError> {
     let payload = payload?.0;
+    payload.validate().map_err(|e| {
+        HttpApiError::ServiceError(crate::service::ServiceError::TypeError(
+            crate::interface::types::TypeError::Validation(e.to_string()),
+        ))
+    })?;
     let dao = PgIdentityDao::new(pool);
     let service = AuthService::new(dao);
     let input = ChangePasswordInput::new(
@@ -381,7 +418,7 @@ mod tests {
             let login_payload = Ok(Json(LoginPayload {
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email: "nonexistent@example.com".to_string(),
-                    hashed_pass: "wrong".to_string(),
+                    hashed_pass: "wrongpass".to_string(),
                 })),
             }));
 
@@ -389,6 +426,85 @@ mod tests {
                 .await
                 .unwrap();
             assert!(matches!(res, LoginResponse::InvalidCredentials));
+        }
+
+        #[tokio::test]
+        async fn test_post_register_invalid_login() {
+            let ctx = setup();
+            let state = State(AppState { pool: ctx.pool });
+            let payload = Ok(Json(RegisterPayload {
+                login: "ab".to_string(),
+                auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                    email: "test@example.com".to_string(),
+                    hashed_pass: "password".to_string(),
+                })),
+            }));
+
+            let res = auth_controller::post_register(state, payload).await;
+            assert!(res.is_err());
+        }
+
+        #[tokio::test]
+        async fn test_post_register_invalid_email() {
+            let ctx = setup();
+            let state = State(AppState { pool: ctx.pool });
+            let payload = Ok(Json(RegisterPayload {
+                login: "test_user".to_string(),
+                auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                    email: "invalid-email".to_string(),
+                    hashed_pass: "password".to_string(),
+                })),
+            }));
+
+            let res = auth_controller::post_register(state, payload).await;
+            assert!(res.is_err());
+        }
+
+        #[tokio::test]
+        async fn test_post_change_password_invalid_length() {
+            let ctx = setup();
+            let state = State(AppState {
+                pool: ctx.pool.clone(),
+            });
+
+            let register_payload = RegisterPayload {
+                login: "test_user".to_string(),
+                auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                    email: "test@example.com".to_string(),
+                    hashed_pass: "password".to_string(),
+                })),
+            };
+            let _ = auth_controller::post_register(state.clone(), Ok(Json(register_payload)))
+                .await
+                .unwrap();
+
+            verify_user(&ctx.pool, "test_user", "test@example.com");
+
+            let login_payload = LoginPayload {
+                auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                    email: "test@example.com".to_string(),
+                    hashed_pass: "password".to_string(),
+                })),
+            };
+            let login_res = auth_controller::post_login(state.clone(), Ok(Json(login_payload)))
+                .await
+                .unwrap();
+            let session_token = if let LoginResponse::Correct(tokens) = login_res {
+                tokens.session_token
+            } else {
+                panic!("Login failed");
+            };
+
+            let service = AuthService::new(PgIdentityDao::new(ctx.pool.clone()));
+            let jwt = service.validate_session(&session_token).unwrap();
+
+            let payload = Ok(Json(ChangePasswordPayload {
+                current_password: "password".to_string(),
+                new_password: "short".to_string(),
+            }));
+
+            let res = auth_controller::post_change_password(jwt, state, payload).await;
+            assert!(res.is_err());
         }
 
         #[tokio::test]

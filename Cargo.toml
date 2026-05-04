@@ -28,3 +28,4 @@ utoipa-swagger-ui = { version = "9.0.2", features = ["axum", "vendored"] }
 uuid = { version = "1.21.0", features = ["serde", "v4"] }
 common-types = { git = "https://github.com/juancabe/tfg-common-types", default-features = false }
 bcrypt = "0.19.0"
+validator = { version = "0.20.0", features = ["derive"] }

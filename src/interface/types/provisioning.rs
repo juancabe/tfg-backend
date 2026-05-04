@@ -1,14 +1,19 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use validator::Validate;
+use crate::helpers::validation::{DESCRIPTION_MAX_LEN, NAME_MAX_LEN, NAME_MIN_LEN, validate_firmware_name};
 use uuid::Uuid;
 
 use super::location::NewLocation;
 
-#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema, Validate)]
 pub struct CreatePendingProvisioningRequest {
     pub group_id: Uuid,
+    #[validate(length(min = NAME_MIN_LEN, max = NAME_MAX_LEN), custom(function = "validate_firmware_name"))]
     pub producer_name: String,
+    #[validate(length(min = NAME_MIN_LEN, max = NAME_MAX_LEN), custom(function = "validate_firmware_name"))]
     pub ble_name: String,
+    #[validate(length(min = 1, max = DESCRIPTION_MAX_LEN))]
     pub description: String,
     pub location: NewLocation,
     pub forwarder_id: Option<Uuid>,
@@ -62,9 +67,11 @@ pub struct CreatePendingProvisioningResponse {
     pub wifi_bundle: ProvisioningWifiBundle,
 }
 
-#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema, Validate)]
 pub struct ConfirmPendingProvisioningRequest {
+    #[validate(length(min = 16, max = 2048))]
     pub x25519_pub_key_bytes_base64: Option<String>,
+    #[validate(range(min = 1, max = 65535))]
     pub lora_addr: Option<i32>,
 }
 

@@ -1,5 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use validator::Validate;
+use crate::helpers::validation::{DESCRIPTION_MAX_LEN, NAME_MAX_LEN, NAME_MIN_LEN, validate_firmware_name};
 use uuid::Uuid;
 
 use crate::{
@@ -7,21 +9,26 @@ use crate::{
     model::models,
 };
 
-#[derive(Deserialize, Serialize, Debug, utoipa::ToSchema)]
+#[derive(Deserialize, Serialize, Debug, utoipa::ToSchema, Validate)]
 pub struct NewProducer {
     pub location: NewLocation,
     pub group_id: Uuid,
+    #[validate(length(min = NAME_MIN_LEN, max = NAME_MAX_LEN), custom(function = "validate_firmware_name"))]
     pub name: String,
+    #[validate(length(min = NAME_MIN_LEN, max = NAME_MAX_LEN), custom(function = "validate_firmware_name"))]
     pub ble_name: String,
+    #[validate(length(min = 1, max = DESCRIPTION_MAX_LEN))]
     pub description: String,
     pub forwarder_id: Option<Uuid>,
     pub lora_addr: Option<i32>,
     pub forward_lora: Option<bool>,
 }
 
-#[derive(Deserialize, Serialize, Debug, utoipa::ToSchema)]
+#[derive(Deserialize, Serialize, Debug, utoipa::ToSchema, Validate)]
 pub struct UpdateProducer {
+    #[validate(length(min = NAME_MIN_LEN, max = NAME_MAX_LEN), custom(function = "validate_firmware_name"))]
     pub name: Option<String>,
+    #[validate(length(min = 1, max = DESCRIPTION_MAX_LEN))]
     pub description: Option<String>,
 }
 

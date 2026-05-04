@@ -4,6 +4,7 @@ use axum::{
     http::StatusCode,
 };
 use serde::{Deserialize, Serialize};
+use validator::Validate;
 use uuid::Uuid;
 
 use crate::{
@@ -101,6 +102,11 @@ pub async fn post_group(
     State(AppState { pool }): State<AppState>,
     Json(body): Json<PostGroupBody>,
 ) -> Result<(StatusCode, Json<PostGroupResponse>), HttpApiError> {
+    body.group.validate().map_err(|e| {
+        HttpApiError::ServiceError(crate::service::ServiceError::TypeError(
+            crate::interface::types::TypeError::Validation(e.to_string()),
+        ))
+    })?;
     let g_service: GroupService<PgGroupDao, PgLocationDao> = pool.into();
     let group = g_service.create_group(jwt.user_id, body.group)?;
     Ok((StatusCode::CREATED, Json(PostGroupResponse { group })))
@@ -121,6 +127,11 @@ pub async fn patch_group_by_id(
     Path(id): Path<Uuid>,
     Json(body): Json<PatchGroupBody>,
 ) -> Result<Json<PatchGroupResponse>, HttpApiError> {
+    body.group.validate().map_err(|e| {
+        HttpApiError::ServiceError(crate::service::ServiceError::TypeError(
+            crate::interface::types::TypeError::Validation(e.to_string()),
+        ))
+    })?;
     let g_service: GroupService<PgGroupDao, PgLocationDao> = pool.into();
     let group = g_service.update_group(jwt.user_id, id, body.group)?;
     Ok(Json(PatchGroupResponse { group }))
@@ -149,6 +160,7 @@ mod tests {
     use super::*;
     use crate::service::auth::JWTKind;
     use crate::test_utils::{create_test_group, create_test_location, create_test_user, setup};
+    use crate::interface::types::location::NewLocation;
     use axum::extract::{Path, State};
 
     fn mock_jwt(user_id: Uuid, login: String) -> JWT {
@@ -211,6 +223,33 @@ mod tests {
                     name: Some("new_group_name".to_string()),
                     description: None,
                     is_public: None,
+                },
+            }),
+        )
+        .await;
+
+        assert!(res.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_post_group_invalid_name_validation() {
+        let ctx = setup();
+        let user = create_test_user(&ctx.pool, "post_group_invalid_name");
+        let state = State(AppState { pool: ctx.pool });
+
+        let res = post_group(
+            mock_jwt(user.id, user.login),
+            state,
+            Json(PostGroupBody {
+                group: NewGroup {
+                    name: "bad/name".to_string(),
+                    description: "Desc".to_string(),
+                    is_public: true,
+                    location: NewLocation {
+                        name: Some("Loc".to_string()),
+                        geo_lat: Some(1.0),
+                        geo_long: Some(1.0),
+                    },
                 },
             }),
         )

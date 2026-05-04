@@ -4,6 +4,7 @@ use axum::{
     http::StatusCode,
 };
 use serde::{Deserialize, Serialize};
+use validator::Validate;
 use uuid::Uuid;
 
 use crate::{
@@ -130,6 +131,11 @@ pub async fn post_producer(
     State(AppState { pool }): State<AppState>,
     Json(body): Json<PostProducerBody>,
 ) -> Result<(StatusCode, Json<PostProducerResponse>), HttpApiError> {
+    body.producer.validate().map_err(|e| {
+        HttpApiError::ServiceError(crate::service::ServiceError::TypeError(
+            crate::interface::types::TypeError::Validation(e.to_string()),
+        ))
+    })?;
     let new_producer = body.producer;
     let p_service: ProducerService<PgProducerDao, PgLocationDao, PgGroupDao> = pool.into();
     let res = p_service.create_producer(jwt.user_id, new_producer)?;
@@ -151,6 +157,11 @@ pub async fn patch_producer_by_id(
     Path(id): Path<Uuid>,
     Json(body): Json<PatchProducerBody>,
 ) -> Result<Json<PatchProducerResponse>, HttpApiError> {
+    body.producer.validate().map_err(|e| {
+        HttpApiError::ServiceError(crate::service::ServiceError::TypeError(
+            crate::interface::types::TypeError::Validation(e.to_string()),
+        ))
+    })?;
     let p_service: ProducerService<PgProducerDao, PgLocationDao, PgGroupDao> = pool.into();
     let producer = p_service.update_producer(jwt.user_id, id, body.producer)?;
     Ok(Json(producer.into()))
@@ -308,6 +319,37 @@ mod tests {
                     },
                     group_id: group.id,
                     name: "New Prod".to_string(),
+                    ble_name: "BLE_New Prod".to_string(),
+                    description: "Desc".to_string(),
+                    forwarder_id: None,
+                    lora_addr: None,
+                    forward_lora: None,
+                },
+            });
+
+            let res = producer_controller::post_producer(jwt, state, body).await;
+            assert!(res.is_err());
+        }
+
+        #[tokio::test]
+        async fn test_post_producer_invalid_name_validation() {
+            let ctx = setup();
+            let user = create_test_user(&ctx.pool, "owner_invalid_name");
+            let location = create_test_location(&ctx.pool, "loc_invalid_name");
+            let group = create_test_group(&ctx.pool, user.id, location.id, "group_invalid_name");
+
+            let jwt = mock_jwt(user.id, user.login);
+            let state = State(AppState { pool: ctx.pool });
+
+            let body = Json(PostProducerBody {
+                producer: NewProducer {
+                    location: NewLocation {
+                        name: Some("Prod Loc".to_string()),
+                        geo_lat: Some(1.0),
+                        geo_long: Some(2.0),
+                    },
+                    group_id: group.id,
+                    name: "bad/name".to_string(),
                     ble_name: "BLE_New Prod".to_string(),
                     description: "Desc".to_string(),
                     forwarder_id: None,

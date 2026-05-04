@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use validator::Validate;
 use thiserror::Error;
 
 use crate::{interface::types::TypeError, model::models};
@@ -16,10 +17,12 @@ pub struct Location {
     pub geo_long: Option<f64>,
 }
 
-#[derive(Deserialize, Serialize, Debug, utoipa::ToSchema)]
+#[derive(Deserialize, Serialize, Debug, utoipa::ToSchema, Validate)]
 pub struct NewLocation {
     pub name: Option<String>,
+    #[validate(range(min = -90.0, max = 90.0))]
     pub geo_lat: Option<f64>,
+    #[validate(range(min = -180.0, max = 180.0))]
     pub geo_long: Option<f64>,
 }
 
@@ -27,6 +30,7 @@ impl TryFrom<NewLocation> for models::NewLocation {
     type Error = TypeError;
 
     fn try_from(value: NewLocation) -> Result<Self, Self::Error> {
+        value.validate().map_err(|e| TypeError::Validation(e.to_string()))?;
         match (value.geo_lat, value.geo_long) {
             (None, None) | (Some(_), Some(_)) => Ok(Self {
                 name: value.name,
