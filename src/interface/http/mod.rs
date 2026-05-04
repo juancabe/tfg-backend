@@ -97,6 +97,7 @@ impl Http {
                 "/auth/change-password",
                 post(auth_controller::post_change_password),
             )
+            .route("/auth/verify", get(auth_controller::get_verify_email))
             .route(
                 "/producers",
                 get(producer_controller::get_producers).post(producer_controller::post_producer),

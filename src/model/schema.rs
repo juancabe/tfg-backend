@@ -35,6 +35,17 @@ diesel::table! {
 }
 
 diesel::table! {
+    email_verifications (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        email -> Text,
+        created_at -> Timestamptz,
+        expires_at -> Timestamptz,
+        consumed_at -> Nullable<Timestamptz>,
+    }
+}
+
+diesel::table! {
     favorite_groups (user_id, group_id) {
         user_id -> Uuid,
         group_id -> Uuid,
@@ -179,6 +190,7 @@ diesel::joinable!(commands -> producers (target_producer_id));
 diesel::joinable!(data -> packet_templates (template_id));
 diesel::joinable!(data -> producers (producer_id));
 diesel::joinable!(email_auth_methods -> users (user_id));
+diesel::joinable!(email_verifications -> users (user_id));
 diesel::joinable!(favorite_groups -> groups (group_id));
 diesel::joinable!(favorite_groups -> users (user_id));
 diesel::joinable!(favorite_producers -> producers (producer_id));
@@ -200,6 +212,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     commands,
     data,
     email_auth_methods,
+    email_verifications,
     favorite_groups,
     favorite_producers,
     groups,

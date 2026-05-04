@@ -1,7 +1,15 @@
 //! DAO for user related identity persistence work
 
 use crate::dao::{DaoError, DbPool};
-use crate::model::models::{EmailAuthMethod, NewEmailAuthMethod, NewRefreshToken, NewUser, User};
+use crate::model::models::{
+    EmailAuthMethod,
+    EmailVerification,
+    NewEmailAuthMethod,
+    NewEmailVerification,
+    NewRefreshToken,
+    NewUser,
+    User,
+};
 use crate::model::schema;
 use diesel::prelude::*;
 use diesel::{ExpressionMethods, RunQueryDsl, SelectableHelper};
@@ -33,6 +41,27 @@ pub trait IdentityDao {
         user_id: &Uuid,
         hashed_pass: &str,
     ) -> Result<EmailAuthMethod, DaoError>;
+
+    /// inserts a new [`EmailVerification`] token
+    fn create_email_verification(
+        &self,
+        verification: NewEmailVerification,
+    ) -> Result<EmailVerification, DaoError>;
+
+    /// finds [`EmailVerification`] by token id
+    fn find_email_verification(
+        &self,
+        token: &Uuid,
+    ) -> Result<Option<EmailVerification>, DaoError>;
+
+    /// marks [`EmailVerification`] token as consumed
+    fn consume_email_verification(
+        &self,
+        token: &Uuid,
+    ) -> Result<EmailVerification, DaoError>;
+
+    /// marks email auth as verified
+    fn mark_email_verified(&self, user_id: &Uuid) -> Result<EmailAuthMethod, DaoError>;
 
     /// inserts a [`NewEmailAuthMethod`] in db `email_auth_methods` table
     fn add_email_auth_method(&self, auth: NewEmailAuthMethod) -> Result<EmailAuthMethod, DaoError>;
@@ -173,6 +202,56 @@ impl IdentityDao for PgIdentityDao {
                 hashed_pass.eq(hashed_pass_in),
                 changed_pass_at.eq(Utc::now()),
             ))
+            .returning(EmailAuthMethod::as_returning())
+            .get_result(conn)
+            .map_err(Into::into)
+    }
+
+    fn create_email_verification(
+        &self,
+        verification: NewEmailVerification,
+    ) -> Result<EmailVerification, DaoError> {
+        use crate::model::schema::email_verifications::dsl::*;
+        let conn = &mut self.pool.get()?;
+        diesel::insert_into(email_verifications)
+            .values(&verification)
+            .returning(EmailVerification::as_returning())
+            .get_result(conn)
+            .map_err(Into::into)
+    }
+
+    fn find_email_verification(
+        &self,
+        token: &Uuid,
+    ) -> Result<Option<EmailVerification>, DaoError> {
+        use crate::model::schema::email_verifications::dsl::*;
+        let conn = &mut self.pool.get()?;
+        email_verifications
+            .filter(id.eq(token))
+            .select(EmailVerification::as_select())
+            .first(conn)
+            .optional()
+            .map_err(Into::into)
+    }
+
+    fn consume_email_verification(
+        &self,
+        token: &Uuid,
+    ) -> Result<EmailVerification, DaoError> {
+        use crate::model::schema::email_verifications::dsl::*;
+        let conn = &mut self.pool.get()?;
+        diesel::update(email_verifications.filter(id.eq(token)))
+            .set(consumed_at.eq(Utc::now()))
+            .returning(EmailVerification::as_returning())
+            .get_result(conn)
+            .map_err(Into::into)
+    }
+
+    fn mark_email_verified(&self, user_id_in: &Uuid) -> Result<EmailAuthMethod, DaoError> {
+        use crate::model::schema::email_auth_methods::dsl::*;
+        let conn = &mut self.pool.get()?;
+        diesel::update(email_auth_methods.filter(user_id.eq(user_id_in)))
+            .set(is_verified.eq(true))
             .returning(EmailAuthMethod::as_returning())
             .get_result(conn)
             .map_err(Into::into)
@@ -432,6 +511,33 @@ mod tests {
                 .expect("Failed to verify token");
 
             assert!(!is_valid);
+        }
+
+        #[test]
+        fn test_create_and_consume_email_verification() {
+            let ctx = setup();
+            let dao = PgIdentityDao::new(ctx.pool.clone());
+            let user = create_test_user(&ctx.pool, "email_verify");
+            let email = "verify@example.com";
+            let expires_at = Utc::now() + Duration::hours(24);
+
+            let verification = dao
+                .create_email_verification(NewEmailVerification {
+                    user_id: user.id,
+                    email,
+                    expires_at,
+                })
+                .expect("Failed to create verification");
+
+            assert_eq!(verification.user_id, user.id);
+            assert_eq!(verification.email, email);
+            assert!(verification.consumed_at.is_none());
+
+            let consumed = dao
+                .consume_email_verification(&verification.id)
+                .expect("Failed to consume verification");
+
+            assert!(consumed.consumed_at.is_some());
         }
     }
 

@@ -113,6 +113,26 @@ pub struct NewEmailAuthMethod<'a> {
 
 #[derive(Debug, Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize)]
 #[diesel(belongs_to(User))]
+#[diesel(table_name = email_verifications)]
+pub struct EmailVerification {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub email: String,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+    pub consumed_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Insertable)]
+#[diesel(table_name = email_verifications)]
+pub struct NewEmailVerification<'a> {
+    pub user_id: Uuid,
+    pub email: &'a str,
+    pub expires_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize)]
+#[diesel(belongs_to(User))]
 #[diesel(table_name = refresh_tokens)]
 pub struct RefreshToken {
     pub id: Uuid,

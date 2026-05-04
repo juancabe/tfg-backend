@@ -17,6 +17,9 @@ use axum::{
     response::IntoResponse,
 };
 use serde::{Deserialize, Serialize};
+use axum::extract::Query;
+use axum::response::Html;
+use uuid::Uuid;
 
 #[derive(Deserialize, utoipa::ToSchema)]
 /// Holds a JWT refresh token hash
@@ -95,6 +98,12 @@ pub struct ChangePasswordResponse {
     pub session_token: String,
     pub refresh_token: String,
 }
+
+#[derive(Deserialize)]
+pub struct VerifyEmailQuery {
+    pub token: String,
+}
+
 
 impl From<TokenPair> for CorrectLoginResponse {
     fn from(value: TokenPair) -> Self {
@@ -204,6 +213,49 @@ pub async fn post_change_password(
     }))
 }
 
+/// `get_verify_email`
+///
+/// Verifies email using token from query
+#[utoipa::path(
+    get,
+    path = "/auth/verify",
+    tag = "auth",
+    params(
+        ("token" = String, Query, description = "Verification token")
+    ),
+    responses(
+        (status = 200, description = "Verification result", body = String)
+    )
+)]
+pub async fn get_verify_email(
+    State(AppState { pool }): State<AppState>,
+    Query(query): Query<VerifyEmailQuery>,
+) -> Result<Html<String>, HttpApiError> {
+    let dao = PgIdentityDao::new(pool);
+    let service = AuthService::new(dao);
+    let token = match Uuid::parse_str(&query.token) {
+        Ok(token) => token,
+        Err(_) => {
+            let body = "<html><body><h1>Verification failed</h1><p>Invalid or expired token.</p></body></html>";
+            return Ok(Html(body.to_string()));
+        }
+    };
+    let result = match service.verify_email(token) {
+        Ok(result) => result,
+        Err(_) => {
+            let body = "<html><body><h1>Verification failed</h1><p>Invalid or expired token.</p></body></html>";
+            return Ok(Html(body.to_string()));
+        }
+    };
+
+    let body = if result.verified {
+        "<html><body><h1>Email verified</h1><p>Your email has been verified.</p></body></html>"
+    } else {
+        "<html><body><h1>Verification failed</h1><p>Invalid or expired token.</p></body></html>"
+    };
+    Ok(Html(body.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -218,8 +270,22 @@ mod tests {
 
     mod integration_test {
         use crate::interface::http::auth_controller;
+        use crate::dao::identity::IdentityDao;
 
         use super::*;
+
+        fn verify_user(pool: &crate::dao::DbPool, login: &str, email: &str) {
+            let dao = PgIdentityDao::new(pool.clone());
+            let user_id = dao.find_by_login(login).unwrap().unwrap().id;
+            let verification = dao
+                .create_email_verification(crate::model::models::NewEmailVerification {
+                    user_id,
+                    email,
+                    expires_at: chrono::Utc::now() + chrono::Duration::hours(24),
+                })
+                .unwrap();
+            dao.mark_email_verified(&verification.user_id).unwrap();
+        }
 
         #[tokio::test]
         async fn test_post_register_success() {
@@ -236,7 +302,7 @@ mod tests {
             let res = auth_controller::post_register(state, payload)
                 .await
                 .unwrap();
-            assert!(matches!(res.0, RegisterResponse::Success));
+            assert!(matches!(res.0, RegisterResponse::NeedsVerification));
         }
 
         #[tokio::test]
@@ -256,6 +322,8 @@ mod tests {
             let _ = auth_controller::post_register(state.clone(), Ok(Json(payload)))
                 .await
                 .unwrap();
+
+            verify_user(&ctx.pool, "test_user", "test@example.com");
 
             // Try again with same login
             let payload_dup = Ok(Json(RegisterPayload {
@@ -288,6 +356,8 @@ mod tests {
             let _ = auth_controller::post_register(state.clone(), Ok(Json(register_payload)))
                 .await
                 .unwrap();
+
+            verify_user(&ctx.pool, "test_user", "test@example.com");
 
             // Login
             let login_payload = Ok(Json(LoginPayload {
@@ -341,6 +411,8 @@ mod tests {
                 .await
                 .unwrap();
 
+            verify_user(&ctx.pool, "test_user", "test@example.com");
+
             // Login with wrong password
             let login_payload = Ok(Json(LoginPayload {
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
@@ -373,6 +445,8 @@ mod tests {
             let _ = auth_controller::post_register(state.clone(), Ok(Json(register_payload)))
                 .await
                 .unwrap();
+
+            verify_user(&ctx.pool, "test_user", "test@example.com");
 
             let login_payload = LoginPayload {
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
@@ -433,6 +507,8 @@ mod tests {
                 .await
                 .unwrap();
 
+            verify_user(&ctx.pool, "test_user", "test@example.com");
+
             let login_payload = LoginPayload {
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email,
@@ -477,6 +553,8 @@ mod tests {
             let _ = auth_controller::post_register(state.clone(), Ok(Json(register_payload)))
                 .await
                 .unwrap();
+
+            verify_user(&ctx.pool, "test_user", "test@example.com");
 
             let login_payload = LoginPayload {
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
@@ -528,6 +606,8 @@ mod tests {
             let _ = auth_controller::post_register(state.clone(), Ok(Json(register_payload)))
                 .await
                 .unwrap();
+
+            verify_user(&ctx.pool, "test_user", "test@example.com");
 
             let login_payload = LoginPayload {
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {

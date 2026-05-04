@@ -3,11 +3,12 @@ pub use jwt::{JWT, JWTKind};
 
 use crate::helpers::users_auth::{AuthMethod, EmailPass};
 use crate::interface::http::auth_controller::{LoginPayload, RegisterPayload, RegisterResponse};
-use crate::model::models::{NewEmailAuthMethod, NewUser};
+use crate::model::models::{NewEmailAuthMethod, NewEmailVerification, NewUser};
 use crate::service::ServiceError;
 use crate::{dao::identity::IdentityDao, model::models::NewRefreshToken};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use chrono::{Duration, Utc};
 
 pub struct LoginInput {
     auth_method: AuthMethod,
@@ -31,6 +32,10 @@ pub struct ChangePasswordInput {
     user_id: Uuid,
     current_password: String,
     new_password: String,
+}
+
+pub struct VerifyEmailOut {
+    pub verified: bool,
 }
 
 impl ChangePasswordInput {
@@ -94,6 +99,16 @@ impl<D: IdentityDao> AuthService<D> {
                     log::info!("[authenticate_user] no user found");
                     return Ok(None);
                 };
+
+                let auth_method = self
+                    ._dao
+                    .find_email_auth_by_user_id(&user.id)?
+                    .ok_or(ServiceError::Forbidden)?;
+
+                if !auth_method.is_verified {
+                    log::info!("[authenticate_user] email not verified");
+                    return Ok(None);
+                }
 
                 if !crate::helpers::crypto_password::verify_password(&stored_hash, &email_pass.hashed_pass) {
                     log::info!("[authenticate_user] password mismatch");
@@ -251,14 +266,24 @@ impl<D: IdentityDao> AuthService<D> {
                 crate::helpers::users_auth::EmailPass::Fields(email_pass_fields) => {
                     let hashed_pass = crate::helpers::crypto_password::hash_password(&email_pass_fields.hashed_pass)
                         .map_err(|e| ServiceError::DbError(crate::dao::DaoError::OtherRare(format!("Bcrypt hash error: {e}"))))?;
-                    
+
                     let auth = NewEmailAuthMethod {
                         user_id: user.id,
                         email: &email_pass_fields.email,
                         hashed_pass: &hashed_pass,
                     };
-                    self._dao.add_email_auth_method(auth).map(|_| ())
-                    // TODO: Send email with verification challenge
+                    self._dao.add_email_auth_method(auth).map(|_| ())?;
+
+                    let expires_at = Utc::now() + Duration::hours(24);
+                    let verification = self._dao.create_email_verification(NewEmailVerification {
+                        user_id: user.id,
+                        email: &email_pass_fields.email,
+                        expires_at,
+                    })?;
+
+                    let verify_url = format!("http://localhost:8443/auth/verify?token={}", verification.id);
+                    log::info!("[register_user] verification url: {verify_url}");
+                    Ok::<(), ServiceError>(())
                 }
                 crate::helpers::users_auth::EmailPass::Confirmation(email_pass_confirmation) => {
                     // TODO: Change auth status to verified
@@ -271,7 +296,31 @@ impl<D: IdentityDao> AuthService<D> {
         };
 
         // TODO: Auth methods that don't require a confirmation's Session Tokens may be returned here
-        Ok(RegisterResponse::Success)
+        Ok(RegisterResponse::NeedsVerification)
+    }
+
+    /// verify_email
+    ///
+    /// # Description
+    /// Validates an email verification token and marks the email as verified.
+    pub fn verify_email(&self, token: Uuid) -> Result<VerifyEmailOut, ServiceError> {
+        let verification = self
+            ._dao
+            .find_email_verification(&token)?
+            .ok_or(ServiceError::NotFound)?;
+
+        if verification.consumed_at.is_some() {
+            return Ok(VerifyEmailOut { verified: false });
+        }
+
+        if verification.expires_at < Utc::now() {
+            return Ok(VerifyEmailOut { verified: false });
+        }
+
+        self._dao.mark_email_verified(&verification.user_id)?;
+        self._dao.consume_email_verification(&token)?;
+
+        Ok(VerifyEmailOut { verified: true })
     }
 
     /// change_password
@@ -384,9 +433,42 @@ mod tests {
             let register_res = service
                 .register_user(register_input)
                 .expect("Failed to register user");
-            assert!(matches!(register_res, RegisterResponse::Success));
+            assert!(matches!(register_res, RegisterResponse::NeedsVerification));
 
             // Act - Authenticate
+            let login_input = LoginInput {
+                auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                    email: email.clone(),
+                    hashed_pass: hashed_pass.clone(),
+                })),
+            };
+
+            let token_pair = service
+                .authenticate_user(login_input)
+                .expect("Failed to authenticate");
+            assert!(token_pair.is_none());
+
+            let user_id = service
+                ._dao
+                .find_by_login(&login)
+                .unwrap()
+                .unwrap()
+                .id;
+
+            let verification = service
+                ._dao
+                .create_email_verification(NewEmailVerification {
+                    user_id,
+                    email: &email,
+                    expires_at: chrono::Utc::now() + chrono::Duration::hours(24),
+                })
+                .expect("Failed to create verification");
+
+            let verify_res = service
+                .verify_email(verification.id)
+                .expect("Failed to verify email");
+            assert!(verify_res.verified);
+
             let login_input = LoginInput {
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email: email.clone(),
@@ -507,6 +589,21 @@ mod tests {
                 })
                 .unwrap();
 
+            let verification = service
+                ._dao
+                .create_email_verification(NewEmailVerification {
+                    user_id: service
+                        ._dao
+                        .find_by_login("user")
+                        .unwrap()
+                        .unwrap()
+                        .id,
+                    email: &email,
+                    expires_at: chrono::Utc::now() + chrono::Duration::hours(24),
+                })
+                .unwrap();
+            service._dao.mark_email_verified(&verification.user_id).unwrap();
+
             let tokens = service
                 .authenticate_user(LoginInput {
                     auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
@@ -539,6 +636,21 @@ mod tests {
                     })),
                 })
                 .unwrap();
+
+            let verification = service
+                ._dao
+                .create_email_verification(NewEmailVerification {
+                    user_id: service
+                        ._dao
+                        .find_by_login("user")
+                        .unwrap()
+                        .unwrap()
+                        .id,
+                    email: &email,
+                    expires_at: chrono::Utc::now() + chrono::Duration::hours(24),
+                })
+                .unwrap();
+            service._dao.mark_email_verified(&verification.user_id).unwrap();
 
             let tokens = service
                 .authenticate_user(LoginInput {
