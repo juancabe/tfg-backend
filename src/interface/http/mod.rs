@@ -202,6 +202,7 @@ impl IntoResponse for HttpApiError {
                         }
                     },
                     ServiceError::TypeError(_) => StatusCode::BAD_REQUEST,
+                    ServiceError::InternalError => StatusCode::INTERNAL_SERVER_ERROR,
                 };
                 (status, service_err.to_string(), Some(self))
             }

@@ -21,4 +21,6 @@ pub enum ServiceError {
     DbError(#[from] DaoError),
     #[error("Type error: {0}")]
     TypeError(#[from] interface::types::TypeError),
+    #[error("Internal Error")]
+    InternalError,
 }

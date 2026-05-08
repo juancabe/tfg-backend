@@ -38,6 +38,9 @@ pub fn setup() -> TestContext {
     let _lock = DB_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let pool = get_pool();
     let mut conn = pool.get().expect("Failed to get connection");
+    let _ = env_logger::builder()
+        .filter_level(log::LevelFilter::Trace)
+        .try_init();
 
     conn.run_pending_migrations(MIGRATIONS)
         .expect("Failed to run migrations");

@@ -1,14 +1,17 @@
 mod jwt;
+use std::env;
+
 pub use jwt::{JWT, JWTKind};
+use lettre::{AsyncTransport, Tokio1Executor};
 
 use crate::helpers::users_auth::{AuthMethod, EmailPass};
 use crate::interface::http::auth_controller::{LoginPayload, RegisterPayload, RegisterResponse};
 use crate::model::models::{NewEmailAuthMethod, NewEmailVerification, NewUser};
 use crate::service::ServiceError;
 use crate::{dao::identity::IdentityDao, model::models::NewRefreshToken};
+use chrono::{Duration, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use chrono::{Duration, Utc};
 
 pub struct LoginInput {
     auth_method: AuthMethod,
@@ -77,6 +80,53 @@ impl<D: IdentityDao> AuthService<D> {
         Self { _dao: dao }
     }
 
+    async fn send_mail(user_mail: &str, subject: &str, body: String) -> Result<(), ServiceError> {
+        let gmail_user = env::var("GMAIL_USER")
+            .inspect_err(|e| {
+                log::error!("[send_verification_mail] Error getting env var GMAIL_USER: {e:?}")
+            })
+            .map_err(|_| ServiceError::InternalError)?;
+        let gmail_app_password = env::var("GMAIL_PASS")
+            .inspect_err(|e| {
+                log::error!("[send_verification_mail] Error getting env var APP_PASSWORD: {e:?}")
+            })
+            .map_err(|_| ServiceError::InternalError)?;
+
+        let email = lettre::Message::builder()
+            .from(format!("TFG Backend <{}>", gmail_user).parse().unwrap())
+            .to(format!("User <{user_mail}>").parse().unwrap())
+            .subject(subject)
+            .body(body)
+            .unwrap();
+
+        let creds = lettre::transport::smtp::authentication::Credentials::new(
+            gmail_user.to_owned(),
+            gmail_app_password.to_owned(),
+        );
+
+        let mailer = lettre::AsyncSmtpTransport::<Tokio1Executor>::relay("smtp.gmail.com")
+            .inspect_err(|e| {
+                log::error!("[send_verification_mail] SmtpTransport after relay: {e:?}")
+            })
+            .map_err(|_| ServiceError::InternalError)?
+            .credentials(creds)
+            .build();
+
+        mailer
+            .send(email)
+            .await
+            .map_err(|e| log::error!("[send_verification_mail] send error: {e:?}"))
+            .and_then(|r| {
+                if r.is_positive() {
+                    Ok(())
+                } else {
+                    log::error!("[send_verification_mail] response was not positive: {r:?}");
+                    Err(())
+                }
+            })
+            .map_err(|_| ServiceError::InternalError)
+    }
+
     /// authenticate_user
     ///
     /// Given a [`LoginInput`], returns a [`JWT`] token pair that will be used for further
@@ -93,12 +143,13 @@ impl<D: IdentityDao> AuthService<D> {
                 };
 
                 // TODO: Check verified email
-                let (user, stored_hash) = if let Some(res) = self._dao.find_by_email(&email_pass.email)? {
-                    res
-                } else {
-                    log::info!("[authenticate_user] no user found");
-                    return Ok(None);
-                };
+                let (user, stored_hash) =
+                    if let Some(res) = self._dao.find_by_email(&email_pass.email)? {
+                        res
+                    } else {
+                        log::info!("[authenticate_user] no user found");
+                        return Ok(None);
+                    };
 
                 let auth_method = self
                     ._dao
@@ -110,7 +161,10 @@ impl<D: IdentityDao> AuthService<D> {
                     return Ok(None);
                 }
 
-                if !crate::helpers::crypto_password::verify_password(&stored_hash, &email_pass.hashed_pass) {
+                if !crate::helpers::crypto_password::verify_password(
+                    &stored_hash,
+                    &email_pass.hashed_pass,
+                ) {
                     log::info!("[authenticate_user] password mismatch");
                     return Ok(None);
                 }
@@ -252,7 +306,10 @@ impl<D: IdentityDao> AuthService<D> {
     /// # Use
     /// Intended for use by a register endpoint
     ///
-    pub fn register_user(&self, input: RegisterInput) -> Result<RegisterResponse, ServiceError> {
+    pub async fn register_user(
+        &self,
+        input: RegisterInput,
+    ) -> Result<RegisterResponse, ServiceError> {
         // The user insert operation needs to be atomic on the service level, if auth method
         // creation fails user needs to be deleted from DB
         let new_user = NewUser {
@@ -264,8 +321,14 @@ impl<D: IdentityDao> AuthService<D> {
         if let Err(e) = match input.auth_method {
             AuthMethod::EmailPass(email_pass) => match email_pass {
                 crate::helpers::users_auth::EmailPass::Fields(email_pass_fields) => {
-                    let hashed_pass = crate::helpers::crypto_password::hash_password(&email_pass_fields.hashed_pass)
-                        .map_err(|e| ServiceError::DbError(crate::dao::DaoError::OtherRare(format!("Bcrypt hash error: {e}"))))?;
+                    let hashed_pass = crate::helpers::crypto_password::hash_password(
+                        &email_pass_fields.hashed_pass,
+                    )
+                    .map_err(|e| {
+                        ServiceError::DbError(crate::dao::DaoError::OtherRare(format!(
+                            "Bcrypt hash error: {e}"
+                        )))
+                    })?;
 
                     let auth = NewEmailAuthMethod {
                         user_id: user.id,
@@ -275,13 +338,25 @@ impl<D: IdentityDao> AuthService<D> {
                     self._dao.add_email_auth_method(auth).map(|_| ())?;
 
                     let expires_at = Utc::now() + Duration::hours(24);
-                    let verification = self._dao.create_email_verification(NewEmailVerification {
-                        user_id: user.id,
-                        email: &email_pass_fields.email,
-                        expires_at,
-                    })?;
+                    let verification =
+                        self._dao.create_email_verification(NewEmailVerification {
+                            user_id: user.id,
+                            email: &email_pass_fields.email,
+                            expires_at,
+                        })?;
 
-                    let verify_url = format!("http://localhost:8443/auth/verify?token={}", verification.id);
+                    // TODO: Send mail
+                    let verify_url = format!(
+                        "http://localhost:8443/auth/verify?token={}",
+                        verification.id
+                    );
+                    Self::send_mail(
+                        &email_pass_fields.email,
+                        "Email Verification link",
+                        format!("Click this link to verify your account: {}", verify_url),
+                    )
+                    .await?;
+
                     log::info!("[register_user] verification url: {verify_url}");
                     Ok::<(), ServiceError>(())
                 }
@@ -411,8 +486,8 @@ mod tests {
     mod integration_test {
         use super::*;
 
-        #[test]
-        fn test_register_and_authenticate_integration() {
+        #[tokio::test]
+        async fn test_register_and_authenticate_integration() {
             let ctx = setup();
             let dao = PgIdentityDao::new(ctx.pool.clone());
             let service = AuthService::new(dao);
@@ -432,6 +507,7 @@ mod tests {
             // Act - Register
             let register_res = service
                 .register_user(register_input)
+                .await
                 .expect("Failed to register user");
             assert!(matches!(register_res, RegisterResponse::NeedsVerification));
 
@@ -448,12 +524,7 @@ mod tests {
                 .expect("Failed to authenticate");
             assert!(token_pair.is_none());
 
-            let user_id = service
-                ._dao
-                .find_by_login(&login)
-                .unwrap()
-                .unwrap()
-                .id;
+            let user_id = service._dao.find_by_login(&login).unwrap().unwrap().id;
 
             let verification = service
                 ._dao
@@ -538,8 +609,8 @@ mod tests {
             assert!(result.is_err());
         }
 
-        #[test]
-        fn test_register_user_duplicate_login() {
+        #[tokio::test]
+        async fn test_register_user_duplicate_login() {
             let ctx = setup();
             let dao = PgIdentityDao::new(ctx.pool.clone());
             let service = AuthService::new(dao);
@@ -554,6 +625,7 @@ mod tests {
 
             service
                 .register_user(input)
+                .await
                 .expect("First registration should succeed");
 
             let input_duplicate = RegisterInput {
@@ -564,15 +636,15 @@ mod tests {
                 })),
             };
 
-            let result = service.register_user(input_duplicate);
+            let result = service.register_user(input_duplicate).await;
             assert!(matches!(
                 result,
                 Err(ServiceError::DbError(DaoError::UniqueViolation(_)))
             ));
         }
 
-        #[test]
-        fn test_validate_session_with_refresh_token() {
+        #[tokio::test]
+        async fn test_validate_session_with_refresh_token() {
             let ctx = setup();
             let dao = PgIdentityDao::new(ctx.pool.clone());
             let service = AuthService::new(dao);
@@ -587,22 +659,21 @@ mod tests {
                         hashed_pass: "pass".to_string(),
                     })),
                 })
+                .await
                 .unwrap();
 
             let verification = service
                 ._dao
                 .create_email_verification(NewEmailVerification {
-                    user_id: service
-                        ._dao
-                        .find_by_login("user")
-                        .unwrap()
-                        .unwrap()
-                        .id,
+                    user_id: service._dao.find_by_login("user").unwrap().unwrap().id,
                     email: &email,
                     expires_at: chrono::Utc::now() + chrono::Duration::hours(24),
                 })
                 .unwrap();
-            service._dao.mark_email_verified(&verification.user_id).unwrap();
+            service
+                ._dao
+                .mark_email_verified(&verification.user_id)
+                .unwrap();
 
             let tokens = service
                 .authenticate_user(LoginInput {
@@ -619,8 +690,8 @@ mod tests {
             assert!(matches!(result, Err(ServiceError::Forbidden)));
         }
 
-        #[test]
-        fn test_refresh_session_with_session_token() {
+        #[tokio::test]
+        async fn test_refresh_session_with_session_token() {
             let ctx = setup();
             let dao = PgIdentityDao::new(ctx.pool.clone());
             let service = AuthService::new(dao);
@@ -635,22 +706,21 @@ mod tests {
                         hashed_pass: "pass".to_string(),
                     })),
                 })
+                .await
                 .unwrap();
 
             let verification = service
                 ._dao
                 .create_email_verification(NewEmailVerification {
-                    user_id: service
-                        ._dao
-                        .find_by_login("user")
-                        .unwrap()
-                        .unwrap()
-                        .id,
+                    user_id: service._dao.find_by_login("user").unwrap().unwrap().id,
                     email: &email,
                     expires_at: chrono::Utc::now() + chrono::Duration::hours(24),
                 })
                 .unwrap();
-            service._dao.mark_email_verified(&verification.user_id).unwrap();
+            service
+                ._dao
+                .mark_email_verified(&verification.user_id)
+                .unwrap();
 
             let tokens = service
                 .authenticate_user(LoginInput {

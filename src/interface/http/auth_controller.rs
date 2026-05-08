@@ -2,15 +2,19 @@
 //!
 //! Defines handlers for "/login", "/register", "/refresh" and "/change-password" endpoints
 
+use crate::helpers::validation::{
+    LOGIN_MAX_LEN, LOGIN_MIN_LEN, PASSWORD_MAX_LEN, PASSWORD_MIN_LEN,
+};
 use crate::{
     dao::identity::PgIdentityDao,
     helpers::{http_app_state::AppState, users_auth::AuthMethod},
-    service::auth::{AuthService, ChangePasswordInput, RefreshSessionOut, TokenPair, JWT},
+    service::auth::{AuthService, ChangePasswordInput, JWT, RefreshSessionOut, TokenPair},
 };
-use crate::helpers::validation::{LOGIN_MAX_LEN, LOGIN_MIN_LEN, PASSWORD_MAX_LEN, PASSWORD_MIN_LEN};
 
 use super::HttpApiError;
 
+use axum::extract::Query;
+use axum::response::Html;
 use axum::{
     Json,
     extract::{State, rejection::JsonRejection},
@@ -18,10 +22,8 @@ use axum::{
     response::IntoResponse,
 };
 use serde::{Deserialize, Serialize};
-use validator::Validate;
-use axum::extract::Query;
-use axum::response::Html;
 use uuid::Uuid;
+use validator::Validate;
 
 #[derive(Deserialize, utoipa::ToSchema, Validate)]
 /// Holds a JWT refresh token hash
@@ -110,7 +112,6 @@ pub struct VerifyEmailQuery {
     pub token: String,
 }
 
-
 impl From<TokenPair> for CorrectLoginResponse {
     fn from(value: TokenPair) -> Self {
         Self {
@@ -175,7 +176,7 @@ pub async fn post_register(
     })?;
     let dao = PgIdentityDao::new(pool);
     let service = AuthService::new(dao);
-    let created = service.register_user(payload.into())?;
+    let created = service.register_user(payload.into()).await?;
     Ok(Json(created))
 }
 
@@ -238,11 +239,8 @@ pub async fn post_change_password(
     })?;
     let dao = PgIdentityDao::new(pool);
     let service = AuthService::new(dao);
-    let input = ChangePasswordInput::new(
-        jwt.user_id,
-        payload.current_password,
-        payload.new_password,
-    );
+    let input =
+        ChangePasswordInput::new(jwt.user_id, payload.current_password, payload.new_password);
     let tokens = service.change_password(input)?;
     Ok(Json(ChangePasswordResponse {
         session_token: tokens.session_token,
@@ -270,6 +268,7 @@ pub async fn get_verify_email(
 ) -> Result<Html<String>, HttpApiError> {
     let dao = PgIdentityDao::new(pool);
     let service = AuthService::new(dao);
+
     let token = match Uuid::parse_str(&query.token) {
         Ok(token) => token,
         Err(_) => {
@@ -306,8 +305,8 @@ mod tests {
     }
 
     mod integration_test {
-        use crate::interface::http::auth_controller;
         use crate::dao::identity::IdentityDao;
+        use crate::interface::http::auth_controller;
 
         use super::*;
 
