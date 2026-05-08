@@ -133,6 +133,31 @@ pub struct NewEmailVerification<'a> {
 
 #[derive(Debug, Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize)]
 #[diesel(belongs_to(User))]
+#[diesel(table_name = password_resets)]
+pub struct PasswordReset {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub email: String,
+    // 6 number digit code
+    pub code: String,
+    // number of attempts while active
+    pub attempts: i32,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+    pub consumed_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Insertable)]
+#[diesel(table_name = password_resets)]
+pub struct NewPasswordReset<'a> {
+    pub user_id: Uuid,
+    pub email: &'a str,
+    pub code: &'a str,
+    pub expires_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize)]
+#[diesel(belongs_to(User))]
 #[diesel(table_name = refresh_tokens)]
 pub struct RefreshToken {
     pub id: Uuid,

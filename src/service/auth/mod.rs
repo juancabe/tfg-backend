@@ -1,17 +1,35 @@
 mod jwt;
 use std::env;
 
+use chrono::{Duration, Utc};
 pub use jwt::{JWT, JWTKind};
 use lettre::{AsyncTransport, Tokio1Executor};
 
 use crate::helpers::users_auth::{AuthMethod, EmailPass};
 use crate::interface::http::auth_controller::{LoginPayload, RegisterPayload, RegisterResponse};
-use crate::model::models::{NewEmailAuthMethod, NewEmailVerification, NewUser};
+use crate::model::models::{
+    NewEmailAuthMethod, NewEmailVerification, NewUser, PasswordReset, User,
+};
 use crate::service::ServiceError;
 use crate::{dao::identity::IdentityDao, model::models::NewRefreshToken};
-use chrono::{Duration, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+pub struct PasswordResetInput {
+    code: String,
+    email: String,
+    new_password: String,
+}
+
+impl PasswordResetInput {
+    pub fn new(email: String, code: String, new_password: String) -> Self {
+        Self {
+            code,
+            email,
+            new_password,
+        }
+    }
+}
 
 pub struct LoginInput {
     auth_method: AuthMethod,
@@ -66,7 +84,7 @@ pub struct TokenPair {
 }
 
 pub struct AuthService<D: IdentityDao> {
-    _dao: D,
+    dao: D,
 }
 
 #[derive(Serialize)]
@@ -77,7 +95,7 @@ pub struct RefreshSessionOut {
 
 impl<D: IdentityDao> AuthService<D> {
     pub fn new(dao: D) -> Self {
-        Self { _dao: dao }
+        Self { dao }
     }
 
     async fn send_mail(user_mail: &str, subject: &str, body: String) -> Result<(), ServiceError> {
@@ -88,7 +106,7 @@ impl<D: IdentityDao> AuthService<D> {
             .map_err(|_| ServiceError::InternalError)?;
         let gmail_app_password = env::var("GMAIL_PASS")
             .inspect_err(|e| {
-                log::error!("[send_verification_mail] Error getting env var APP_PASSWORD: {e:?}")
+                log::error!("[send_verification_mail] Error getting env var GMAIL_PASS: {e:?}")
             })
             .map_err(|_| ServiceError::InternalError)?;
 
@@ -132,8 +150,6 @@ impl<D: IdentityDao> AuthService<D> {
     /// Given a [`LoginInput`], returns a [`JWT`] token pair that will be used for further
     /// authentication by the user on other endpoints
     ///
-    /// # TODO
-    /// TODO: Right now, for [`EmailPass`] _auth_ it doesn't check whether the email is verified
     pub fn authenticate_user(&self, input: LoginInput) -> Result<Option<TokenPair>, ServiceError> {
         match input.auth_method {
             AuthMethod::EmailPass(email_pass) => {
@@ -142,9 +158,8 @@ impl<D: IdentityDao> AuthService<D> {
                     EmailPass::Confirmation(_) => Err(ServiceError::Forbidden)?,
                 };
 
-                // TODO: Check verified email
                 let (user, stored_hash) =
-                    if let Some(res) = self._dao.find_by_email(&email_pass.email)? {
+                    if let Some(res) = self.dao.find_by_email(&email_pass.email)? {
                         res
                     } else {
                         log::info!("[authenticate_user] no user found");
@@ -152,7 +167,7 @@ impl<D: IdentityDao> AuthService<D> {
                     };
 
                 let auth_method = self
-                    ._dao
+                    .dao
                     .find_email_auth_by_user_id(&user.id)?
                     .ok_or(ServiceError::Forbidden)?;
 
@@ -175,9 +190,8 @@ impl<D: IdentityDao> AuthService<D> {
                     user_id: user.id,
                     expires_at: exp,
                 };
-                let version_n = self._dao.rotate_refresh_token(new_token)?;
+                let version_n = self.dao.rotate_refresh_token(new_token)?;
 
-                // TODO: Get rid of clone
                 let refresh_token = JWT::new(
                     version_n,
                     user.login.clone(),
@@ -210,6 +224,134 @@ impl<D: IdentityDao> AuthService<D> {
         }
     }
 
+    /// request_password_reset
+    ///
+    /// # Description
+    /// Given a email, generate a password reset for it and send a mail with the code
+    ///
+    /// # Use
+    /// Reset password with just email access
+    pub async fn request_password_reset(&self, email: &str) -> Result<(), ServiceError> {
+        let (user, _) = match self.dao.find_by_email(email)? {
+            Some(user) => user,
+            None => {
+                log::info!("[request_password_reset] no user found for {email}");
+                return Ok(());
+            }
+        };
+
+        let code = rand::random_range(0..=999_999);
+        let code = format!("{:06}", code);
+        let npr = crate::model::models::NewPasswordReset {
+            user_id: user.id,
+            email,
+            code: &code,
+            expires_at: chrono::Utc::now() + chrono::Duration::hours(2),
+        };
+        let pr = self.dao.create_password_reset(npr)?;
+
+        match Self::send_mail(
+            email,
+            "Password Reset Code",
+            format!("Your one-time code is: {code}"),
+        )
+        .await
+        {
+            Ok(()) => (),
+            Err(e) => {
+                log::error!("[request_password_reset] Error sending verification code: {e:?}");
+                self.dao.consume_password_reset(&pr.id)?;
+                Err(ServiceError::InternalError)?
+            }
+        };
+
+        log::info!("[request_password_reset] Sent email to {email}, with code: {code}");
+
+        Ok(())
+    }
+
+    /// reset_password
+    ///
+    /// # Description
+    /// Given a code, an email and a new password, ensure a valid PasswordReset exists for it and reset the password
+    /// # Use
+    /// After requesting the password reset, use it
+    pub fn reset_password(
+        &self,
+        PasswordResetInput {
+            code,
+            email,
+            new_password,
+        }: PasswordResetInput,
+    ) -> Result<(), ServiceError> {
+        let (user, _) = self
+            .dao
+            .find_by_email(&email)?
+            .ok_or(ServiceError::NotFound)?;
+
+        let pr = match self.reset_password_verify(&code, &user) {
+            Ok(pr) => pr,
+            Err(e) => {
+                log::error!("[reset_password] Verification failed, adding attempt: {e:?}");
+                self.dao.add_attempt_user_verifications(&user.id)?;
+                Err(ServiceError::NotFound)?
+            }
+        };
+
+        // Reset password
+        let hashed_pass =
+            crate::helpers::crypto_password::hash_password(&new_password).map_err(|e| {
+                ServiceError::DbError(crate::dao::DaoError::OtherRare(format!(
+                    "Bcrypt hash error: {e}"
+                )))
+            })?;
+
+        self.dao
+            .update_email_password(&user.id, &hashed_pass)
+            .map_err(ServiceError::from)?;
+
+        self.dao.consume_password_reset(&pr.id)?;
+
+        Ok(())
+    }
+
+    fn reset_password_verify(
+        &self,
+        code: &str,
+        user: &User,
+    ) -> Result<PasswordReset, ServiceError> {
+        code.parse::<i32>()
+            .map_err(|e| log::warn!("[reset_password] received invalid i32 as code: {e:?}"))
+            .and_then(|num| {
+                if !(0..=999_999).contains(&num) {
+                    Err(())
+                } else {
+                    Ok(1)
+                }
+            })
+            .map_err(|()| {
+                ServiceError::TypeError(crate::interface::types::TypeError::Validation(
+                    "Invalid code format, expected 6 numeric digit".to_string(),
+                ))
+            })?;
+
+        let pr = self
+            .dao
+            .find_password_reset(code, &user.id)?
+            .ok_or(ServiceError::NotFound)?;
+
+        const MAX_RESET_ATTEMPTS: i32 = 10;
+
+        if pr.attempts > MAX_RESET_ATTEMPTS
+            || pr.expires_at < Utc::now()
+            || pr.consumed_at.is_some()
+        {
+            Err(ServiceError::NotFound)?
+        }
+
+        Ok(pr)
+    }
+
     /// validate_session
     ///
     /// # Description
@@ -226,12 +368,12 @@ impl<D: IdentityDao> AuthService<D> {
         }
 
         let user = self
-            ._dao
+            .dao
             .find_by_login(&decoded.login)?
             .ok_or(ServiceError::Forbidden)?;
 
         // Verify that the token belongs to the current, active refresh token family.
-        if !self._dao.verify_token(&user.id, decoded.version_n)? {
+        if !self.dao.verify_token(&user.id, decoded.version_n)? {
             return Err(ServiceError::Forbidden);
         }
 
@@ -254,13 +396,13 @@ impl<D: IdentityDao> AuthService<D> {
             return Err(ServiceError::Forbidden);
         }
 
-        let user_id = if let Some(user) = self._dao.find_by_login(&decoded.login)? {
+        let user_id = if let Some(user) = self.dao.find_by_login(&decoded.login)? {
             user.id
         } else {
             return Err(ServiceError::Forbidden);
         };
 
-        if !self._dao.verify_token(&user_id, decoded.version_n)? {
+        if !self.dao.verify_token(&user_id, decoded.version_n)? {
             return Err(ServiceError::Forbidden);
         }
 
@@ -272,7 +414,7 @@ impl<D: IdentityDao> AuthService<D> {
             expires_at: exp,
         };
 
-        let new_version_n = self._dao.rotate_refresh_token(new_refresh)?;
+        let new_version_n = self.dao.rotate_refresh_token(new_refresh)?;
         let new_refresh = JWT::new(
             new_version_n,
             decoded.login.clone(),
@@ -316,7 +458,7 @@ impl<D: IdentityDao> AuthService<D> {
             login: &input.login,
         };
 
-        let user = self._dao.create_user(new_user)?;
+        let user = self.dao.create_user(new_user)?;
 
         if let Err(e) = match input.auth_method {
             AuthMethod::EmailPass(email_pass) => match email_pass {
@@ -335,11 +477,11 @@ impl<D: IdentityDao> AuthService<D> {
                         email: &email_pass_fields.email,
                         hashed_pass: &hashed_pass,
                     };
-                    self._dao.add_email_auth_method(auth).map(|_| ())?;
+                    self.dao.add_email_auth_method(auth).map(|_| ())?;
 
                     let expires_at = Utc::now() + Duration::hours(24);
                     let verification =
-                        self._dao.create_email_verification(NewEmailVerification {
+                        self.dao.create_email_verification(NewEmailVerification {
                             user_id: user.id,
                             email: &email_pass_fields.email,
                             expires_at,
@@ -380,7 +522,7 @@ impl<D: IdentityDao> AuthService<D> {
     /// Validates an email verification token and marks the email as verified.
     pub fn verify_email(&self, token: Uuid) -> Result<VerifyEmailOut, ServiceError> {
         let verification = self
-            ._dao
+            .dao
             .find_email_verification(&token)?
             .ok_or(ServiceError::NotFound)?;
 
@@ -392,8 +534,8 @@ impl<D: IdentityDao> AuthService<D> {
             return Ok(VerifyEmailOut { verified: false });
         }
 
-        self._dao.mark_email_verified(&verification.user_id)?;
-        self._dao.consume_email_verification(&token)?;
+        self.dao.mark_email_verified(&verification.user_id)?;
+        self.dao.consume_email_verification(&token)?;
 
         Ok(VerifyEmailOut { verified: true })
     }
@@ -405,7 +547,7 @@ impl<D: IdentityDao> AuthService<D> {
     /// and returns a fresh session/refresh token pair.
     pub fn change_password(&self, input: ChangePasswordInput) -> Result<TokenPair, ServiceError> {
         let auth = self
-            ._dao
+            .dao
             .find_email_auth_by_user_id(&input.user_id)?
             .ok_or(ServiceError::Forbidden)?;
 
@@ -423,12 +565,12 @@ impl<D: IdentityDao> AuthService<D> {
                 )))
             })?;
 
-        self._dao
+        self.dao
             .update_email_password(&input.user_id, &hashed_pass)
             .map_err(ServiceError::from)?;
 
         let user = self
-            ._dao
+            .dao
             .find_by_id(input.user_id)?
             .ok_or(ServiceError::Forbidden)?;
 
@@ -438,7 +580,7 @@ impl<D: IdentityDao> AuthService<D> {
             user_id: user.id,
             expires_at: exp,
         };
-        let version_n = self._dao.rotate_refresh_token(new_token)?;
+        let version_n = self.dao.rotate_refresh_token(new_token)?;
 
         let refresh_token = JWT::new(
             version_n,
@@ -485,6 +627,8 @@ mod tests {
 
     mod integration_test {
         use super::*;
+        use crate::helpers::crypto_password::verify_password;
+        use crate::model::models::NewPasswordReset;
 
         #[tokio::test]
         async fn test_register_and_authenticate_integration() {
@@ -524,10 +668,10 @@ mod tests {
                 .expect("Failed to authenticate");
             assert!(token_pair.is_none());
 
-            let user_id = service._dao.find_by_login(&login).unwrap().unwrap().id;
+            let user_id = service.dao.find_by_login(&login).unwrap().unwrap().id;
 
             let verification = service
-                ._dao
+                .dao
                 .create_email_verification(NewEmailVerification {
                     user_id,
                     email: &email,
@@ -663,15 +807,15 @@ mod tests {
                 .unwrap();
 
             let verification = service
-                ._dao
+                .dao
                 .create_email_verification(NewEmailVerification {
-                    user_id: service._dao.find_by_login("user").unwrap().unwrap().id,
+                    user_id: service.dao.find_by_login("user").unwrap().unwrap().id,
                     email: &email,
                     expires_at: chrono::Utc::now() + chrono::Duration::hours(24),
                 })
                 .unwrap();
             service
-                ._dao
+                .dao
                 .mark_email_verified(&verification.user_id)
                 .unwrap();
 
@@ -710,15 +854,15 @@ mod tests {
                 .unwrap();
 
             let verification = service
-                ._dao
+                .dao
                 .create_email_verification(NewEmailVerification {
-                    user_id: service._dao.find_by_login("user").unwrap().unwrap().id,
+                    user_id: service.dao.find_by_login("user").unwrap().unwrap().id,
                     email: &email,
                     expires_at: chrono::Utc::now() + chrono::Duration::hours(24),
                 })
                 .unwrap();
             service
-                ._dao
+                .dao
                 .mark_email_verified(&verification.user_id)
                 .unwrap();
 
@@ -735,6 +879,124 @@ mod tests {
             // Try to refresh session using session token
             let result = service.refresh_session(&tokens.session_token);
             assert!(matches!(result, Err(ServiceError::Forbidden)));
+        }
+
+        #[tokio::test]
+        async fn test_request_password_reset_missing_user_no_error() {
+            let ctx = setup();
+            let dao = PgIdentityDao::new(ctx.pool.clone());
+            let service = AuthService::new(dao);
+
+            let result = service.request_password_reset("missing@example.com").await;
+            assert!(result.is_ok());
+        }
+
+        #[tokio::test]
+        async fn test_reset_password_success() {
+            let ctx = setup();
+            let dao = PgIdentityDao::new(ctx.pool.clone());
+            let service = AuthService::new(dao);
+
+            service
+                .register_user(RegisterInput {
+                    login: "user".to_string(),
+                    auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                        email: "test@example.com".to_string(),
+                        hashed_pass: "old_password".to_string(),
+                    })),
+                })
+                .await
+                .unwrap();
+
+            let verification = service
+                .dao
+                .create_email_verification(NewEmailVerification {
+                    user_id: service.dao.find_by_login("user").unwrap().unwrap().id,
+                    email: "test@example.com",
+                    expires_at: chrono::Utc::now() + chrono::Duration::hours(24),
+                })
+                .unwrap();
+            service
+                .dao
+                .mark_email_verified(&verification.user_id)
+                .unwrap();
+
+            let user_id = service.dao.find_by_login("user").unwrap().unwrap().id;
+            let code = "123456".to_string();
+            service
+                .dao
+                .create_password_reset(NewPasswordReset {
+                    user_id,
+                    email: "test@example.com",
+                    code: &code,
+                    expires_at: chrono::Utc::now() + chrono::Duration::hours(2),
+                })
+                .unwrap();
+
+            service
+                .reset_password(PasswordResetInput::new(
+                    "test@example.com".to_string(),
+                    code.clone(),
+                    "new_password".to_string(),
+                ))
+                .unwrap();
+
+            let auth = service
+                .dao
+                .find_email_auth_by_user_id(&user_id)
+                .unwrap()
+                .unwrap();
+            assert!(verify_password(&auth.hashed_pass, "new_password"));
+
+            let pr = service
+                .dao
+                .find_password_reset(&code, &user_id)
+                .unwrap()
+                .unwrap();
+            assert!(pr.consumed_at.is_some());
+        }
+
+        #[tokio::test]
+        async fn test_reset_password_invalid_code_increments_attempts() {
+            let ctx = setup();
+            let dao = PgIdentityDao::new(ctx.pool.clone());
+            let service = AuthService::new(dao);
+
+            service
+                .register_user(RegisterInput {
+                    login: "user".to_string(),
+                    auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                        email: "test@example.com".to_string(),
+                        hashed_pass: "old_password".to_string(),
+                    })),
+                })
+                .await
+                .unwrap();
+
+            let user_id = service.dao.find_by_login("user").unwrap().unwrap().id;
+            service
+                .dao
+                .create_password_reset(NewPasswordReset {
+                    user_id,
+                    email: "test@example.com",
+                    code: "123456",
+                    expires_at: chrono::Utc::now() + chrono::Duration::hours(2),
+                })
+                .unwrap();
+
+            let result = service.reset_password(PasswordResetInput::new(
+                "test@example.com".to_string(),
+                "654321".to_string(),
+                "new_password".to_string(),
+            ));
+            assert!(matches!(result, Err(ServiceError::NotFound)));
+
+            let pr = service
+                .dao
+                .find_password_reset("123456", &user_id)
+                .unwrap()
+                .unwrap();
+            assert_eq!(pr.attempts, 1);
         }
 
         #[test]

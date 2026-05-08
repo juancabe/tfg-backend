@@ -107,6 +107,19 @@ diesel::table! {
 }
 
 diesel::table! {
+    password_resets (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        email -> Text,
+        code -> Text,
+        attempts -> Int4,
+        created_at -> Timestamptz,
+        expires_at -> Timestamptz,
+        consumed_at -> Nullable<Timestamptz>,
+    }
+}
+
+diesel::table! {
     pending_producer_registrations (id) {
         id -> Uuid,
         owner_user_id -> Uuid,
@@ -124,7 +137,6 @@ diesel::table! {
         location_geo_lat -> Nullable<Float8>,
         location_geo_long -> Nullable<Float8>,
         forwarder_id -> Nullable<Uuid>,
-        forward_lora -> Bool,
         data_template_id -> Nullable<Uuid>,
         mqtt_username -> Text,
         mqtt_password_hash -> Text,
@@ -134,6 +146,7 @@ diesel::table! {
         broker_port -> Int2,
         x25519_pub_key_bytes_base64 -> Nullable<Text>,
         lora_addr -> Nullable<Int4>,
+        forward_lora -> Bool,
     }
 }
 
@@ -200,6 +213,7 @@ diesel::joinable!(groups -> users (owner_user_id));
 diesel::joinable!(internet_auths -> producers (producer_id));
 diesel::joinable!(mqtt_broker_auths -> producers (producer_id));
 diesel::joinable!(packet_templates -> users (creator_user_id));
+diesel::joinable!(password_resets -> users (user_id));
 diesel::joinable!(pending_producer_registrations -> groups (group_id));
 diesel::joinable!(pending_producer_registrations -> packet_templates (data_template_id));
 diesel::joinable!(pending_producer_registrations -> users (owner_user_id));
@@ -220,6 +234,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     locations,
     mqtt_broker_auths,
     packet_templates,
+    password_resets,
     pending_producer_registrations,
     producers,
     refresh_tokens,

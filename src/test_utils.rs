@@ -46,7 +46,7 @@ pub fn setup() -> TestContext {
         .expect("Failed to run migrations");
 
     // Clean DB
-    diesel::sql_query("TRUNCATE TABLE users, locations, packet_templates, groups, producers, internet_auths, mqtt_broker_auths, pending_producer_registrations RESTART IDENTITY CASCADE")
+    diesel::sql_query("TRUNCATE TABLE users, locations, packet_templates, groups, producers, internet_auths, mqtt_broker_auths, pending_producer_registrations, password_resets RESTART IDENTITY CASCADE")
         .execute(&mut conn)
         .expect("Failed to truncate tables");
 

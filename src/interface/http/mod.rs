@@ -97,6 +97,14 @@ impl Http {
                 "/auth/change-password",
                 post(auth_controller::post_change_password),
             )
+            .route(
+                "/auth/password-reset-request",
+                post(auth_controller::post_password_reset_request),
+            )
+            .route(
+                "/auth/password-reset",
+                post(auth_controller::post_password_reset),
+            )
             .route("/auth/verify", get(auth_controller::get_verify_email))
             .route(
                 "/producers",

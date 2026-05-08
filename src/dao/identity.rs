@@ -2,18 +2,13 @@
 
 use crate::dao::{DaoError, DbPool};
 use crate::model::models::{
-    EmailAuthMethod,
-    EmailVerification,
-    NewEmailAuthMethod,
-    NewEmailVerification,
-    NewRefreshToken,
-    NewUser,
-    User,
+    EmailAuthMethod, EmailVerification, NewEmailAuthMethod, NewEmailVerification, NewPasswordReset,
+    NewRefreshToken, NewUser, PasswordReset, User,
 };
 use crate::model::schema;
+use chrono::Utc;
 use diesel::prelude::*;
 use diesel::{ExpressionMethods, RunQueryDsl, SelectableHelper};
-use chrono::Utc;
 use uuid::Uuid;
 
 pub trait IdentityDao {
@@ -49,16 +44,31 @@ pub trait IdentityDao {
     ) -> Result<EmailVerification, DaoError>;
 
     /// finds [`EmailVerification`] by token id
-    fn find_email_verification(
+    fn find_email_verification(&self, token: &Uuid) -> Result<Option<EmailVerification>, DaoError>;
+
+    /// inserts a new [`PasswordReset`] row entity
+    fn create_password_reset(
         &self,
-        token: &Uuid,
-    ) -> Result<Option<EmailVerification>, DaoError>;
+        new_password_reset: NewPasswordReset,
+    ) -> Result<PasswordReset, DaoError>;
+
+    /// finds [`PasswordReset`] by code
+    fn find_password_reset(
+        &self,
+        code: &str,
+        user_id: &Uuid,
+    ) -> Result<Option<PasswordReset>, DaoError>;
+
+    /// consumes [`PasswordReset`] by id
+    fn consume_password_reset(&self, id: &Uuid) -> Result<Option<PasswordReset>, DaoError>;
 
     /// marks [`EmailVerification`] token as consumed
-    fn consume_email_verification(
-        &self,
-        token: &Uuid,
-    ) -> Result<EmailVerification, DaoError>;
+    fn consume_email_verification(&self, token: &Uuid) -> Result<EmailVerification, DaoError>;
+
+    /// `attempt++` on every `in_user: &Uuid` corresponding password reset rows
+    /// # Returns
+    /// Number of affected rows
+    fn add_attempt_user_verifications(&self, in_user: &Uuid) -> Result<usize, DaoError>;
 
     /// marks email auth as verified
     fn mark_email_verified(&self, user_id: &Uuid) -> Result<EmailAuthMethod, DaoError>;
@@ -220,10 +230,7 @@ impl IdentityDao for PgIdentityDao {
             .map_err(Into::into)
     }
 
-    fn find_email_verification(
-        &self,
-        token: &Uuid,
-    ) -> Result<Option<EmailVerification>, DaoError> {
+    fn find_email_verification(&self, token: &Uuid) -> Result<Option<EmailVerification>, DaoError> {
         use crate::model::schema::email_verifications::dsl::*;
         let conn = &mut self.pool.get()?;
         email_verifications
@@ -234,10 +241,7 @@ impl IdentityDao for PgIdentityDao {
             .map_err(Into::into)
     }
 
-    fn consume_email_verification(
-        &self,
-        token: &Uuid,
-    ) -> Result<EmailVerification, DaoError> {
+    fn consume_email_verification(&self, token: &Uuid) -> Result<EmailVerification, DaoError> {
         use crate::model::schema::email_verifications::dsl::*;
         let conn = &mut self.pool.get()?;
         diesel::update(email_verifications.filter(id.eq(token)))
@@ -256,12 +260,61 @@ impl IdentityDao for PgIdentityDao {
             .get_result(conn)
             .map_err(Into::into)
     }
+
+    fn create_password_reset(
+        &self,
+        password_reset: NewPasswordReset,
+    ) -> Result<PasswordReset, DaoError> {
+        use crate::model::schema::password_resets::dsl::*;
+        let conn = &mut self.pool.get()?;
+        diesel::insert_into(password_resets)
+            .values(&password_reset)
+            .returning(PasswordReset::as_returning())
+            .get_result(conn)
+            .map_err(Into::into)
+    }
+
+    fn find_password_reset(
+        &self,
+        in_code: &str,
+        in_user: &Uuid,
+    ) -> Result<Option<PasswordReset>, DaoError> {
+        use crate::model::schema::password_resets::dsl::*;
+        let conn = &mut self.pool.get()?;
+        password_resets
+            .filter(code.eq(in_code))
+            .filter(user_id.eq(in_user))
+            .select(PasswordReset::as_select())
+            .first(conn)
+            .optional()
+            .map_err(Into::into)
+    }
+
+    fn consume_password_reset(&self, in_id: &Uuid) -> Result<Option<PasswordReset>, DaoError> {
+        use crate::model::schema::password_resets::dsl::*;
+        let conn = &mut self.pool.get()?;
+        diesel::update(password_resets.filter(id.eq(in_id)))
+            .set(consumed_at.eq(Some(chrono::Utc::now())))
+            .returning(PasswordReset::as_returning())
+            .get_result(conn)
+            .optional()
+            .map_err(Into::into)
+    }
+
+    fn add_attempt_user_verifications(&self, in_user: &Uuid) -> Result<usize, DaoError> {
+        use crate::model::schema::password_resets::dsl::*;
+        let conn = &mut self.pool.get()?;
+        diesel::update(password_resets.filter(user_id.eq(in_user)))
+            .set(attempts.eq(attempts + 1))
+            .execute(conn)
+            .map_err(Into::into)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::models::{NewEmailAuthMethod, NewRefreshToken, NewUser};
+    use crate::model::models::{NewEmailAuthMethod, NewPasswordReset, NewRefreshToken, NewUser};
     use crate::test_utils::{create_test_user, setup};
     use chrono::{Duration, Utc};
 
@@ -395,9 +448,7 @@ mod tests {
             })
             .expect("Failed to add auth method");
 
-            let found = dao
-                .find_by_email(email)
-                .expect("Failed to find user");
+            let found = dao.find_by_email(email).expect("Failed to find user");
 
             assert!(found.is_some());
             let (found_user, found_hash) = found.unwrap();
@@ -538,6 +589,85 @@ mod tests {
                 .expect("Failed to consume verification");
 
             assert!(consumed.consumed_at.is_some());
+        }
+
+        #[test]
+        fn test_create_and_find_password_reset() {
+            let ctx = setup();
+            let dao = PgIdentityDao::new(ctx.pool.clone());
+            let user = create_test_user(&ctx.pool, "password_reset");
+            let email = "reset@example.com";
+            let code = "123456";
+
+            let created = dao
+                .create_password_reset(NewPasswordReset {
+                    user_id: user.id,
+                    email,
+                    code,
+                    expires_at: Utc::now() + Duration::hours(2),
+                })
+                .expect("Failed to create password reset");
+
+            assert_eq!(created.user_id, user.id);
+            assert_eq!(created.email, email);
+            assert_eq!(created.code, code);
+            assert_eq!(created.attempts, 0);
+            assert!(created.consumed_at.is_none());
+
+            let found = dao
+                .find_password_reset(code, &user.id)
+                .expect("Failed to find password reset");
+            assert!(found.is_some());
+            let found = found.unwrap();
+            assert_eq!(found.id, created.id);
+        }
+
+        #[test]
+        fn test_consume_password_reset() {
+            let ctx = setup();
+            let dao = PgIdentityDao::new(ctx.pool.clone());
+            let user = create_test_user(&ctx.pool, "consume_reset");
+            let created = dao
+                .create_password_reset(NewPasswordReset {
+                    user_id: user.id,
+                    email: "consume@example.com",
+                    code: "654321",
+                    expires_at: Utc::now() + Duration::hours(2),
+                })
+                .expect("Failed to create password reset");
+
+            let consumed = dao
+                .consume_password_reset(&created.id)
+                .expect("Failed to consume password reset");
+
+            assert!(consumed.is_some());
+            assert!(consumed.unwrap().consumed_at.is_some());
+        }
+
+        #[test]
+        fn test_add_attempt_user_verifications() {
+            let ctx = setup();
+            let dao = PgIdentityDao::new(ctx.pool.clone());
+            let user = create_test_user(&ctx.pool, "attempt_reset");
+
+            dao.create_password_reset(NewPasswordReset {
+                user_id: user.id,
+                email: "attempt@example.com",
+                code: "000001",
+                expires_at: Utc::now() + Duration::hours(2),
+            })
+            .expect("Failed to create password reset");
+
+            let updated = dao
+                .add_attempt_user_verifications(&user.id)
+                .expect("Failed to update attempts");
+            assert_eq!(updated, 1);
+
+            let found = dao
+                .find_password_reset("000001", &user.id)
+                .expect("Failed to find password reset")
+                .unwrap();
+            assert_eq!(found.attempts, 1);
         }
     }
 
