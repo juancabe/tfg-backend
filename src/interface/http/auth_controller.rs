@@ -6,9 +6,10 @@
 use crate::helpers::validation::{
     LOGIN_MAX_LEN, LOGIN_MIN_LEN, PASSWORD_MAX_LEN, PASSWORD_MIN_LEN,
 };
+use crate::interface::types::auth::AuthMethod;
 use crate::{
     dao::identity::PgIdentityDao,
-    helpers::{http_app_state::AppState, users_auth::AuthMethod},
+    helpers::http_app_state::AppState,
     service::auth::{
         AuthService, ChangePasswordInput, JWT, PasswordResetInput, RefreshSessionOut, TokenPair,
     },
@@ -379,7 +380,6 @@ pub async fn get_verify_email(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::helpers::users_auth::{EmailPass, EmailPassFields};
     use crate::test_utils::setup;
     use axum::extract::State;
 
@@ -391,6 +391,7 @@ mod tests {
     mod integration_test {
         use crate::dao::identity::IdentityDao;
         use crate::interface::http::auth_controller;
+        use crate::interface::types::auth::{AuthMethod, EmailPass, EmailPassFields};
         use crate::model::models::NewPasswordReset;
 
         use super::*;
@@ -416,7 +417,7 @@ mod tests {
                 login: "test_user".to_string(),
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email: "test@example.com".to_string(),
-                    hashed_pass: "password".to_string(),
+                    pass: "password".to_string(),
                 })),
             }));
 
@@ -436,7 +437,7 @@ mod tests {
                 login: "test_user".to_string(),
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email: "test@example.com".to_string(),
-                    hashed_pass: "password".to_string(),
+                    pass: "password".to_string(),
                 })),
             };
 
@@ -451,7 +452,7 @@ mod tests {
                 login: "test_user".to_string(),
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email: "test2@example.com".to_string(),
-                    hashed_pass: "password".to_string(),
+                    pass: "password".to_string(),
                 })),
             }));
 
@@ -471,7 +472,7 @@ mod tests {
                 login: "test_user".to_string(),
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email: "test@example.com".to_string(),
-                    hashed_pass: "password".to_string(),
+                    pass: "password".to_string(),
                 })),
             };
             let _ = auth_controller::post_register(state.clone(), Ok(Json(register_payload)))
@@ -484,7 +485,7 @@ mod tests {
             let login_payload = Ok(Json(LoginPayload {
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email: "test@example.com".to_string(),
-                    hashed_pass: "password".to_string(),
+                    pass: "password".to_string(),
                 })),
             }));
 
@@ -502,7 +503,7 @@ mod tests {
             let login_payload = Ok(Json(LoginPayload {
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email: "nonexistent@example.com".to_string(),
-                    hashed_pass: "wrongpass".to_string(),
+                    pass: "wrongpass".to_string(),
                 })),
             }));
 
@@ -520,7 +521,7 @@ mod tests {
                 login: "ab".to_string(),
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email: "test@example.com".to_string(),
-                    hashed_pass: "password".to_string(),
+                    pass: "password".to_string(),
                 })),
             }));
 
@@ -536,7 +537,7 @@ mod tests {
                 login: "test_user".to_string(),
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email: "invalid-email".to_string(),
-                    hashed_pass: "password".to_string(),
+                    pass: "password".to_string(),
                 })),
             }));
 
@@ -555,7 +556,7 @@ mod tests {
                 login: "test_user".to_string(),
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email: "test@example.com".to_string(),
-                    hashed_pass: "password".to_string(),
+                    pass: "password".to_string(),
                 })),
             };
             let _ = auth_controller::post_register(state.clone(), Ok(Json(register_payload)))
@@ -567,7 +568,7 @@ mod tests {
             let login_payload = LoginPayload {
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email: "test@example.com".to_string(),
-                    hashed_pass: "password".to_string(),
+                    pass: "password".to_string(),
                 })),
             };
             let login_res = auth_controller::post_login(state.clone(), Ok(Json(login_payload)))
@@ -604,7 +605,7 @@ mod tests {
                 login: "test_user".to_string(),
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email: email.clone(),
-                    hashed_pass: "password".to_string(),
+                    pass: "password".to_string(),
                 })),
             };
             let _ = auth_controller::post_register(state.clone(), Ok(Json(register_payload)))
@@ -617,7 +618,7 @@ mod tests {
             let login_payload = Ok(Json(LoginPayload {
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email,
-                    hashed_pass: "wrong_password".to_string(),
+                    pass: "wrong_password".to_string(),
                 })),
             }));
 
@@ -639,7 +640,7 @@ mod tests {
                 login: "test_user".to_string(),
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email: "test@example.com".to_string(),
-                    hashed_pass: "password".to_string(),
+                    pass: "password".to_string(),
                 })),
             };
             let _ = auth_controller::post_register(state.clone(), Ok(Json(register_payload)))
@@ -651,7 +652,7 @@ mod tests {
             let login_payload = LoginPayload {
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email: "test@example.com".to_string(),
-                    hashed_pass: "password".to_string(),
+                    pass: "password".to_string(),
                 })),
             };
             let login_res = auth_controller::post_login(state.clone(), Ok(Json(login_payload)))
@@ -700,7 +701,7 @@ mod tests {
                 login: "test_user".to_string(),
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email: email.clone(),
-                    hashed_pass: "password".to_string(),
+                    pass: "password".to_string(),
                 })),
             };
             let _ = auth_controller::post_register(state.clone(), Ok(Json(register_payload)))
@@ -712,7 +713,7 @@ mod tests {
             let login_payload = LoginPayload {
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email,
-                    hashed_pass: "password".to_string(),
+                    pass: "password".to_string(),
                 })),
             };
             let login_res = auth_controller::post_login(state.clone(), Ok(Json(login_payload)))
@@ -747,7 +748,7 @@ mod tests {
                 login: "test_user".to_string(),
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email: email.clone(),
-                    hashed_pass: "password".to_string(),
+                    pass: "password".to_string(),
                 })),
             };
             let _ = auth_controller::post_register(state.clone(), Ok(Json(register_payload)))
@@ -759,7 +760,7 @@ mod tests {
             let login_payload = LoginPayload {
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email,
-                    hashed_pass: "password".to_string(),
+                    pass: "password".to_string(),
                 })),
             };
             let login_res = auth_controller::post_login(state.clone(), Ok(Json(login_payload)))
@@ -800,7 +801,7 @@ mod tests {
                 login: "test_user".to_string(),
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email: "test@example.com".to_string(),
-                    hashed_pass: "password".to_string(),
+                    pass: "password".to_string(),
                 })),
             };
             let _ = auth_controller::post_register(state.clone(), Ok(Json(register_payload)))
@@ -812,7 +813,7 @@ mod tests {
             let login_payload = LoginPayload {
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email: "test@example.com".to_string(),
-                    hashed_pass: "password".to_string(),
+                    pass: "password".to_string(),
                 })),
             };
             let login_res = auth_controller::post_login(state.clone(), Ok(Json(login_payload)))
@@ -857,7 +858,7 @@ mod tests {
                 login: "test_user".to_string(),
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email: "test@example.com".to_string(),
-                    hashed_pass: "password".to_string(),
+                    pass: "password".to_string(),
                 })),
             };
             let _ = auth_controller::post_register(state.clone(), Ok(Json(register_payload)))
@@ -898,7 +899,7 @@ mod tests {
                 login: "test_user".to_string(),
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email: "test@example.com".to_string(),
-                    hashed_pass: "password".to_string(),
+                    pass: "password".to_string(),
                 })),
             };
             let _ = auth_controller::post_register(state.clone(), Ok(Json(register_payload)))
@@ -930,7 +931,7 @@ mod tests {
             let login_payload = LoginPayload {
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email: "test@example.com".to_string(),
-                    hashed_pass: "new_password".to_string(),
+                    pass: "new_password".to_string(),
                 })),
             };
             let login_res = auth_controller::post_login(state, Ok(Json(login_payload)))

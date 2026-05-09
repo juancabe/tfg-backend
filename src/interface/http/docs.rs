@@ -3,7 +3,6 @@ use utoipa::{
     openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme},
 };
 
-use crate::helpers::users_auth::AuthMethod;
 use crate::interface::http::{
     auth_controller, group_controller, producer_controller, provisioning_controller,
     template_data_controller,
@@ -83,7 +82,7 @@ impl Modify for SecurityAddon {
             auth_controller::ChangePasswordResponse,
             auth_controller::PasswordResetRequestPayload,
             auth_controller::PasswordResetPayload,
-            AuthMethod,
+            crate::interface::types::auth::AuthMethod,
 
             producer_controller::GetProducersResponse,
             producer_controller::GetProducerResponse,

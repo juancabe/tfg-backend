@@ -1,15 +1,16 @@
 //! User related authentication methods type definitions
 
+use crate::helpers::validation::{PASSWORD_MAX_LEN, PASSWORD_MIN_LEN};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
-use crate::helpers::validation::{PASSWORD_MAX_LEN, PASSWORD_MIN_LEN};
+
 /// Fields introduced by the user on a [`EmailPass`] login
 #[derive(Serialize, Deserialize, Debug, utoipa::ToSchema, Validate)]
 pub struct EmailPassFields {
     #[validate(email)]
     pub email: String,
     #[validate(length(min = PASSWORD_MIN_LEN, max = PASSWORD_MAX_LEN))]
-    pub hashed_pass: String,
+    pub pass: String,
 }
 
 /// Confirmation of the email, this is currently a

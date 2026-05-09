@@ -1,5 +1,6 @@
 use thiserror::Error;
 
+pub mod auth;
 pub mod group;
 pub mod location;
 pub mod producer;

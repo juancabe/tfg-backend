@@ -5,8 +5,8 @@ use chrono::{Duration, Utc};
 pub use jwt::{JWT, JWTKind};
 use lettre::{AsyncTransport, Tokio1Executor};
 
-use crate::helpers::users_auth::{AuthMethod, EmailPass};
 use crate::interface::http::auth_controller::{LoginPayload, RegisterPayload, RegisterResponse};
+use crate::interface::types::auth::{AuthMethod, EmailPass};
 use crate::model::models::{
     NewEmailAuthMethod, NewEmailVerification, NewUser, PasswordReset, User,
 };
@@ -176,10 +176,8 @@ impl<D: IdentityDao> AuthService<D> {
                     return Ok(None);
                 }
 
-                if !crate::helpers::crypto_password::verify_password(
-                    &stored_hash,
-                    &email_pass.hashed_pass,
-                ) {
+                if !crate::helpers::crypto_password::verify_password(&stored_hash, &email_pass.pass)
+                {
                     log::info!("[authenticate_user] password mismatch");
                     return Ok(None);
                 }
@@ -292,7 +290,7 @@ impl<D: IdentityDao> AuthService<D> {
         let pr = match self.reset_password_verify(&code, &user) {
             Ok(pr) => pr,
             Err(e) => {
-                log::error!("[reset_password] Verification failed, adding attempt: {e:?}");
+                log::warn!("[reset_password] Verification failed, adding attempt: {e:?}");
                 self.dao.add_attempt_user_verifications(&user.id)?;
                 Err(ServiceError::NotFound)?
             }
@@ -462,15 +460,14 @@ impl<D: IdentityDao> AuthService<D> {
 
         if let Err(e) = match input.auth_method {
             AuthMethod::EmailPass(email_pass) => match email_pass {
-                crate::helpers::users_auth::EmailPass::Fields(email_pass_fields) => {
-                    let hashed_pass = crate::helpers::crypto_password::hash_password(
-                        &email_pass_fields.hashed_pass,
-                    )
-                    .map_err(|e| {
-                        ServiceError::DbError(crate::dao::DaoError::OtherRare(format!(
-                            "Bcrypt hash error: {e}"
-                        )))
-                    })?;
+                EmailPass::Fields(email_pass_fields) => {
+                    let hashed_pass =
+                        crate::helpers::crypto_password::hash_password(&email_pass_fields.pass)
+                            .map_err(|e| {
+                                ServiceError::DbError(crate::dao::DaoError::OtherRare(format!(
+                                    "Bcrypt hash error: {e}"
+                                )))
+                            })?;
 
                     let auth = NewEmailAuthMethod {
                         user_id: user.id,
@@ -502,7 +499,7 @@ impl<D: IdentityDao> AuthService<D> {
                     log::info!("[register_user] verification url: {verify_url}");
                     Ok::<(), ServiceError>(())
                 }
-                crate::helpers::users_auth::EmailPass::Confirmation(email_pass_confirmation) => {
+                EmailPass::Confirmation(email_pass_confirmation) => {
                     // TODO: Change auth status to verified
                     todo!("email_pass_confirmation not implemented: {email_pass_confirmation:?}")
                 }
@@ -618,7 +615,6 @@ mod tests {
     use super::*;
     use crate::dao::DaoError;
     use crate::dao::identity::PgIdentityDao;
-    use crate::helpers::users_auth::{EmailPass, EmailPassConfirmation, EmailPassFields};
     use crate::test_utils::setup;
 
     mod unit_test {
@@ -628,6 +624,7 @@ mod tests {
     mod integration_test {
         use super::*;
         use crate::helpers::crypto_password::verify_password;
+        use crate::interface::types::auth::{EmailPassConfirmation, EmailPassFields};
         use crate::model::models::NewPasswordReset;
 
         #[tokio::test]
@@ -638,13 +635,13 @@ mod tests {
 
             let login = "test_user".to_string();
             let email = "test@example.com".to_string();
-            let hashed_pass = "hashed_password".to_string();
+            let pass = "password".to_string();
 
             let register_input = RegisterInput {
                 login: login.clone(),
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email: email.clone(),
-                    hashed_pass: hashed_pass.clone(),
+                    pass: pass.clone(),
                 })),
             };
 
@@ -659,7 +656,7 @@ mod tests {
             let login_input = LoginInput {
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email: email.clone(),
-                    hashed_pass: hashed_pass.clone(),
+                    pass: pass.clone(),
                 })),
             };
 
@@ -687,7 +684,7 @@ mod tests {
             let login_input = LoginInput {
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email: email.clone(),
-                    hashed_pass: hashed_pass.clone(),
+                    pass: pass.clone(),
                 })),
             };
 
@@ -733,7 +730,7 @@ mod tests {
             let login_input = LoginInput {
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email: "nonexistent@example.com".to_string(),
-                    hashed_pass: "wrong_password".to_string(),
+                    pass: "wrong_password".to_string(),
                 })),
             };
 
@@ -763,7 +760,7 @@ mod tests {
                 login: "duplicate".to_string(),
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email: "test1@example.com".to_string(),
-                    hashed_pass: "pass".to_string(),
+                    pass: "pass".to_string(),
                 })),
             };
 
@@ -776,7 +773,7 @@ mod tests {
                 login: "duplicate".to_string(),
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                     email: "test2@example.com".to_string(),
-                    hashed_pass: "pass".to_string(),
+                    pass: "pass".to_string(),
                 })),
             };
 
@@ -800,7 +797,7 @@ mod tests {
                     login: "user".to_string(),
                     auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                         email: email.clone(),
-                        hashed_pass: "pass".to_string(),
+                        pass: "pass".to_string(),
                     })),
                 })
                 .await
@@ -823,7 +820,7 @@ mod tests {
                 .authenticate_user(LoginInput {
                     auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                         email,
-                        hashed_pass: "pass".to_string(),
+                        pass: "pass".to_string(),
                     })),
                 })
                 .unwrap()
@@ -847,7 +844,7 @@ mod tests {
                     login: "user".to_string(),
                     auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                         email: email.clone(),
-                        hashed_pass: "pass".to_string(),
+                        pass: "pass".to_string(),
                     })),
                 })
                 .await
@@ -870,7 +867,7 @@ mod tests {
                 .authenticate_user(LoginInput {
                     auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                         email,
-                        hashed_pass: "pass".to_string(),
+                        pass: "pass".to_string(),
                     })),
                 })
                 .unwrap()
@@ -902,7 +899,7 @@ mod tests {
                     login: "user".to_string(),
                     auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                         email: "test@example.com".to_string(),
-                        hashed_pass: "old_password".to_string(),
+                        pass: "old_password".to_string(),
                     })),
                 })
                 .await
@@ -967,7 +964,7 @@ mod tests {
                     login: "user".to_string(),
                     auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
                         email: "test@example.com".to_string(),
-                        hashed_pass: "old_password".to_string(),
+                        pass: "old_password".to_string(),
                     })),
                 })
                 .await

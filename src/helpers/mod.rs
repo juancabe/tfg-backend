@@ -3,5 +3,4 @@
 pub mod crypto_password;
 pub mod data_templates;
 pub mod http_app_state;
-pub mod users_auth;
 pub mod validation;
