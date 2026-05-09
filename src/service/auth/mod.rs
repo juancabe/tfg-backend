@@ -153,10 +153,7 @@ impl<D: IdentityDao> AuthService<D> {
     pub fn authenticate_user(&self, input: LoginInput) -> Result<Option<TokenPair>, ServiceError> {
         match input.auth_method {
             AuthMethod::EmailPass(email_pass) => {
-                let email_pass = match email_pass {
-                    EmailPass::Fields(email_pass_fields) => email_pass_fields,
-                    EmailPass::Confirmation(_) => Err(ServiceError::Forbidden)?,
-                };
+                let EmailPass::Fields(email_pass) = email_pass;
 
                 let (user, stored_hash) =
                     if let Some(res) = self.dao.find_by_email(&email_pass.email)? {
@@ -499,14 +496,13 @@ impl<D: IdentityDao> AuthService<D> {
                     log::info!("[register_user] verification url: {verify_url}");
                     Ok::<(), ServiceError>(())
                 }
-                EmailPass::Confirmation(email_pass_confirmation) => {
-                    // TODO: Change auth status to verified
-                    todo!("email_pass_confirmation not implemented: {email_pass_confirmation:?}")
-                }
             },
         } {
             log::warn!("Error adding auth method: {e:?}");
-            todo!("Delete user")
+            if let Err(delete_err) = self.dao.delete_user(&user.id) {
+                log::error!("Failed to clean up user after auth method failure: {delete_err:?}");
+            }
+            return Err(ServiceError::DbError(crate::dao::DaoError::OtherRare("Failed to create auth method".to_string())));
         };
 
         // TODO: Auth methods that don't require a confirmation's Session Tokens may be returned here
@@ -624,7 +620,7 @@ mod tests {
     mod integration_test {
         use super::*;
         use crate::helpers::crypto_password::verify_password;
-        use crate::interface::types::auth::{EmailPassConfirmation, EmailPassFields};
+        use crate::interface::types::auth::EmailPassFields;
         use crate::model::models::NewPasswordReset;
 
         #[tokio::test]
@@ -996,22 +992,6 @@ mod tests {
             assert_eq!(pr.attempts, 1);
         }
 
-        #[test]
-        fn test_authenticate_forbidden_confirmation() {
-            let ctx = setup();
-            let dao = PgIdentityDao::new(ctx.pool.clone());
-            let service = AuthService::new(dao);
 
-            let login_input = LoginInput {
-                auth_method: AuthMethod::EmailPass(EmailPass::Confirmation(
-                    EmailPassConfirmation {
-                        email: "test@example.com".to_string(),
-                    },
-                )),
-            };
-
-            let result = service.authenticate_user(login_input);
-            assert!(matches!(result, Err(ServiceError::Forbidden)));
-        }
     }
 }

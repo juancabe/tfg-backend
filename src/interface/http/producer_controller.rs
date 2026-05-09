@@ -74,8 +74,9 @@ impl From<Producer> for PostProducerResponse {
     }
 }
 
-// TODO: Docs
-
+/// Get all owned producers
+///
+/// Fetches all producers for the currently authenticated user.
 #[utoipa::path(
     get,
     path = "/producers",
@@ -92,6 +93,9 @@ pub async fn get_producers(
     Ok(Json(GetProducersResponse::from(producers)))
 }
 
+/// Get producer by ID
+///
+/// Retrieves the details of a specific producer.
 #[utoipa::path(
     get,
     path = "/producers/{id}",
@@ -116,6 +120,9 @@ pub async fn get_producer_by_id(
     Ok(Json(GetProducerResponse::from(producer)))
 }
 
+/// Create a new producer
+///
+/// Creates a new producer and associates it with a specific group.
 #[utoipa::path(
     post,
     path = "/producers",
@@ -142,6 +149,9 @@ pub async fn post_producer(
     Ok((StatusCode::CREATED, Json(res.into())))
 }
 
+/// Update producer by ID
+///
+/// Updates the metadata of a specific producer.
 #[utoipa::path(
     patch,
     path = "/producers/{id}",
@@ -167,6 +177,9 @@ pub async fn patch_producer_by_id(
     Ok(Json(producer.into()))
 }
 
+/// Delete producer by ID
+///
+/// Deletes a specific producer.
 #[utoipa::path(
     delete,
     path = "/producers/{id}",

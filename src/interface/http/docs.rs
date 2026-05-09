@@ -124,6 +124,7 @@ impl Modify for SecurityAddon {
             DataSampleView,
             ProducerDataQuery,
             ProducerDataView,
+            crate::interface::http::ErrorResponse,
         )
     ),
     modifiers(&SecurityAddon),

@@ -13,19 +13,10 @@ pub struct EmailPassFields {
     pub pass: String,
 }
 
-/// Confirmation of the email, this is currently a
-/// TODO: implement correct email confirmation, checking expiration
-#[derive(Serialize, Deserialize, Debug, utoipa::ToSchema, Validate)]
-pub struct EmailPassConfirmation {
-    #[validate(email)]
-    pub email: String,
-}
-
 /// Holds both kind of [`EmailPass`] possibilities
 #[derive(Serialize, Deserialize, Debug, utoipa::ToSchema)]
 pub enum EmailPass {
     Fields(EmailPassFields),
-    Confirmation(EmailPassConfirmation),
 }
 
 /// Is intended to be expanded when new [`AuthMethod`]s are used (OAuth, ...)
@@ -39,7 +30,6 @@ impl AuthMethod {
         match self {
             AuthMethod::EmailPass(email_pass) => match email_pass {
                 EmailPass::Fields(fields) => fields.validate(),
-                EmailPass::Confirmation(fields) => fields.validate(),
             },
         }
     }

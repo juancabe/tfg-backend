@@ -167,9 +167,8 @@ pub enum HttpApiError {
 }
 
 /// How error responses will be serialized
-/// TODO: utoipa for this
-#[derive(Serialize)]
-struct ErrorResponse {
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct ErrorResponse {
     message: String,
 }
 

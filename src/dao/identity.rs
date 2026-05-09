@@ -15,6 +15,9 @@ pub trait IdentityDao {
     /// inserts a [`NewUser`] in db `users` table
     fn create_user(&self, new_user: NewUser) -> Result<User, DaoError>;
 
+    /// deletes a [`User`] by id
+    fn delete_user(&self, id: &Uuid) -> Result<(), DaoError>;
+
     /// finds [`User`] by `login`
     fn find_by_login(&self, login: &str) -> Result<Option<User>, DaoError>;
 
@@ -108,6 +111,15 @@ impl IdentityDao for PgIdentityDao {
             .returning(User::as_returning())
             .get_result(conn)
             .map_err(Into::into)
+    }
+
+    fn delete_user(&self, id_in: &Uuid) -> Result<(), DaoError> {
+        use crate::model::schema::users::dsl::*;
+        let conn = &mut self.pool.get()?;
+        diesel::delete(users.filter(id.eq(id_in)))
+            .execute(conn)
+            .map_err(Into::into)
+            .map(|_| ())
     }
 
     fn find_by_login(&self, login_query: &str) -> Result<Option<User>, DaoError> {

@@ -15,31 +15,40 @@ pub enum ProducerAuthCredentials {
 }
 
 pub trait ProducerDao {
-    // TODO: Document these
+    /// Creates a new producer with the provided parameters.
     fn create_producer(&self, new_producer: NewProducer) -> Result<Producer, DaoError>;
+    /// Retrieves a producer by its unique ID. Returns `None` if it does not exist.
     fn get_by_id(&self, id: Uuid) -> Result<Option<Producer>, DaoError>;
+    /// Retrieves all producers that belong to a specific group.
     fn get_by_group_id(&self, id: Uuid) -> Result<Vec<Producer>, DaoError>;
+    /// Updates the `last_seen` timestamp of the producer to the current UTC time.
     fn update_last_seen(&self, id: Uuid) -> Result<(), DaoError>;
 
+    /// Moves a producer to a different group.
     fn update_group(&self, producer_id_in: Uuid, group_id_in: Uuid) -> Result<(), DaoError>;
+    /// Updates the metadata (like name or description) of an existing producer.
     fn update_metadata(
         &self,
         producer_id_in: Uuid,
         update: ProducerUpdate,
     ) -> Result<Producer, DaoError>;
 
+    /// Assigns a forwarder (another producer) to the specified producer.
     fn set_forwarder(&self, producer_id: Uuid, forwarder_id: Uuid) -> Result<(), DaoError>;
 
+    /// Sets the internet authentication key (X25519 public key) for a producer.
     fn set_internet_auth(&self, producer_id: Uuid, key_b64: String) -> Result<(), DaoError>;
-    // Using a tuple or a struct for creds here for simplicity
+    /// Sets the MQTT broker authentication credentials for a producer.
     fn set_mqtt_auth(&self, producer_id: Uuid, creds: NewMqttBrokerAuth) -> Result<(), DaoError>;
 
+    /// Creates a producer using an existing database connection (useful for transactions).
     fn create_producer_with_conn(
         &self,
         conn: &mut diesel::PgConnection,
         new_producer: NewProducer,
     ) -> Result<Producer, DaoError>;
 
+    /// Sets internet auth using an existing connection.
     fn set_internet_auth_with_conn(
         &self,
         conn: &mut diesel::PgConnection,
@@ -47,6 +56,7 @@ pub trait ProducerDao {
         key_b64: String,
     ) -> Result<(), DaoError>;
 
+    /// Sets MQTT auth using an existing connection.
     fn set_mqtt_auth_with_conn(
         &self,
         conn: &mut diesel::PgConnection,
@@ -54,17 +64,22 @@ pub trait ProducerDao {
         creds: NewMqttBrokerAuth,
     ) -> Result<(), DaoError>;
 
+    /// Clones the internal database connection pool.
     fn pool_clone(&self) -> DbPool;
 
+    /// Retrieves the authentication credentials (Internet or MQTT) associated with a producer.
     fn get_auth_credentials(&self, producer_id: Uuid) -> Result<ProducerAuthCredentials, DaoError>;
+    /// Deletes a producer by its ID. Fails if the producer does not exist.
     fn delete(&self, id: Uuid) -> Result<(), DaoError>;
 
+    /// Lists candidates that can act as a forwarder within a specific group owned by a given user.
     fn list_available_forwarders(
         &self,
         owner_user_id: Uuid,
         group_id: Uuid,
     ) -> Result<Vec<crate::service::provisioning::ForwarderCandidate>, DaoError>;
 
+    /// Retrieves a single forwarder candidate if it is eligible and exists.
     fn get_forwarder_candidate(
         &self,
         forwarder_id: Uuid,
