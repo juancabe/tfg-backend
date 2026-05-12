@@ -1,4 +1,4 @@
-use std::{env, io, str};
+use std::{io, str};
 
 use ntex::{
     ServiceFactory,
@@ -129,27 +129,13 @@ impl MqttBrokerConfig {
     /// - `MQTT_TLS_KEY_PATH` (default `mqtt-server-key.pem`)
     /// - `MQTT_WORKERS` (default `1`)
     pub fn from_env() -> Self {
-        let bind_host = env::var("MQTT_BIND_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
-        let bind_port = env::var("MQTT_BIND_PORT")
-            .or_else(|_| env::var("MQTT_PORT"))
-            .unwrap_or_else(|_| "8883".to_string())
-            .parse::<u16>()
-            .expect("MQTT_BIND_PORT/MQTT_PORT must be a number");
-        let tls_cert_path =
-            env::var("MQTT_TLS_CERT_PATH").unwrap_or_else(|_| "mqtt-server-cert.pem".to_string());
-        let tls_key_path =
-            env::var("MQTT_TLS_KEY_PATH").unwrap_or_else(|_| "mqtt-server-key.pem".to_string());
-        let workers = env::var("MQTT_WORKERS")
-            .unwrap_or_else(|_| "1".to_string())
-            .parse::<usize>()
-            .expect("MQTT_WORKERS must be a number");
-
+        let config = crate::config::get();
         Self {
-            bind_host,
-            bind_port,
-            tls_cert_path,
-            tls_key_path,
-            workers,
+            bind_host: config.get_mqtt_bind_host().to_string(),
+            bind_port: config.get_mqtt_bind_port(),
+            tls_cert_path: config.get_mqtt_tls_cert_path().to_string(),
+            tls_key_path: config.get_mqtt_tls_key_path().to_string(),
+            workers: config.get_mqtt_workers(),
         }
     }
 

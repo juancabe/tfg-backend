@@ -1,4 +1,4 @@
-use std::{env, time::Duration};
+use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use jsonwebtoken::{
@@ -43,9 +43,8 @@ pub struct JWT {
 }
 
 lazy_static::lazy_static! {
-    static ref b64_key: String = env::var("JWT_KEY_BASE64").expect("Should be set/loaded");
-    static ref enc: EncodingKey = EncodingKey::from_base64_secret(&b64_key).expect("JWT key should be valid base64");
-    static ref dec: DecodingKey = DecodingKey::from_base64_secret(&b64_key).expect("JWT key should be valid base64");
+    static ref enc: EncodingKey = EncodingKey::from_base64_secret(crate::config::get().get_jwt_key_base64()).expect("JWT key should be valid base64");
+    static ref dec: DecodingKey = DecodingKey::from_base64_secret(crate::config::get().get_jwt_key_base64()).expect("JWT key should be valid base64");
 }
 
 impl JWT {

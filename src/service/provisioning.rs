@@ -1,4 +1,3 @@
-use std::env;
 
 use chrono::{Duration, Utc};
 use diesel::Connection;
@@ -138,14 +137,8 @@ where
             }
         }
 
-        let broker_host = env::var("MQTT_PROVISION_HOST")
-            .or_else(|_| env::var("MQTT_HOST"))
-            .unwrap_or_else(|_| "localhost".to_string());
-        let broker_port: i16 = env::var("MQTT_PROVISION_PORT")
-            .or_else(|_| env::var("MQTT_PORT"))
-            .ok()
-            .and_then(|v| v.parse::<i16>().ok())
-            .unwrap_or(1883);
+        let broker_host = crate::config::get().get_mqtt_provision_host().to_string();
+        let broker_port: i16 = crate::config::get().get_mqtt_provision_port();
 
         let mqtt_username = format!(
             "dev-{}",

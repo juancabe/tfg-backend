@@ -1,5 +1,4 @@
 mod jwt;
-use std::env;
 
 use chrono::{Duration, Utc};
 pub use jwt::{JWT, JWTKind};
@@ -99,16 +98,8 @@ impl<D: IdentityDao> AuthService<D> {
     }
 
     async fn send_mail(user_mail: &str, subject: &str, body: String) -> Result<(), ServiceError> {
-        let gmail_user = env::var("GMAIL_USER")
-            .inspect_err(|e| {
-                log::error!("[send_verification_mail] Error getting env var GMAIL_USER: {e:?}")
-            })
-            .map_err(|_| ServiceError::InternalError)?;
-        let gmail_app_password = env::var("GMAIL_PASS")
-            .inspect_err(|e| {
-                log::error!("[send_verification_mail] Error getting env var GMAIL_PASS: {e:?}")
-            })
-            .map_err(|_| ServiceError::InternalError)?;
+        let gmail_user = crate::config::get().get_gmail_user();
+        let gmail_app_password = crate::config::get().get_gmail_pass();
 
         let email = lettre::Message::builder()
             .from(format!("TFG Backend <{}>", gmail_user).parse().unwrap())
@@ -481,9 +472,10 @@ impl<D: IdentityDao> AuthService<D> {
                             expires_at,
                         })?;
 
-                    // TODO: Send mail
                     let verify_url = format!(
-                        "http://localhost:8443/auth/verify?token={}",
+                        "http://{}:{}/auth/verify?token={}",
+                        crate::config::get().get_server_name(),
+                        crate::config::get().get_http_port(),
                         verification.id
                     );
                     Self::send_mail(

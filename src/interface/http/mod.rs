@@ -21,8 +21,6 @@ use crate::{
     service::ServiceError,
 };
 
-pub const DEFAULT_PORT: u16 = 8443;
-
 // Simple HTTP logging middleware: method, route (or path), status and latency
 async fn log_middleware(
     req: axum::http::Request<axum::body::Body>,

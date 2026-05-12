@@ -1,13 +1,12 @@
 use diesel::{PgConnection, r2d2::ConnectionManager};
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use dotenvy::dotenv;
-use std::env;
 use std::net::{Ipv4Addr, SocketAddrV4};
 use tokio::select;
 use tokio::sync::oneshot;
 
 use backend::dao::{DbPool, MAX_DB_POOL_SIZE};
-use backend::interface::http::{self, DEFAULT_PORT};
+use backend::interface::http::{self};
 use backend::interface::mqtt::{MqttBroker, MqttBrokerConfig};
 
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
@@ -25,7 +24,13 @@ async fn main() {
     dotenv().ok();
 
     env_logger::init();
-    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    
+    backend::config::CONFIG
+        .set(backend::config::Config::init())
+        .map_err(|_| "Config already initialized")
+        .unwrap();
+
+    let database_url = backend::config::get().get_database_url();
     let manager = ConnectionManager::<PgConnection>::new(database_url);
     let pool: DbPool = r2d2::Pool::builder()
         .max_size(MAX_DB_POOL_SIZE)
@@ -36,8 +41,10 @@ async fn main() {
     log::info!("DB pool created: max_size={}", MAX_DB_POOL_SIZE);
     run_migrations(&pool);
 
-    let http_listen_address =
-        std::net::SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, DEFAULT_PORT));
+    let http_listen_address = std::net::SocketAddr::V4(SocketAddrV4::new(
+        Ipv4Addr::UNSPECIFIED,
+        backend::config::get().get_http_port(),
+    ));
 
     let (mqtt_peers_tx, _) = tokio::sync::broadcast::channel::<uuid::Uuid>(1024);
 

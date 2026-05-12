@@ -8,7 +8,6 @@ use diesel::prelude::*;
 use diesel::r2d2::{self, ConnectionManager};
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use dotenvy::dotenv;
-use std::env;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
@@ -24,7 +23,8 @@ pub struct TestContext {
 pub fn get_pool() -> DbPool {
     POOL.get_or_init(|| {
         dotenv().ok();
-        let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let _ = crate::config::CONFIG.set(crate::config::Config::init());
+        let database_url = crate::config::get().get_database_url();
         let manager = ConnectionManager::<PgConnection>::new(database_url);
         r2d2::Pool::builder()
             .max_size(1)
