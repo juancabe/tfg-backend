@@ -168,6 +168,7 @@ pub struct MqttBroker;
 impl MqttBroker {
     fn control_service_factory(
         forwarder_peers_service: MqttForwarderPeersService,
+        mqtt_peers_tx: tokio::sync::broadcast::Sender<uuid::Uuid>,
     ) -> impl ServiceFactory<
         v5::Control<MqttError>,
         v5::Session<ProducerIdentity>,
@@ -177,10 +178,12 @@ impl MqttBroker {
     > {
         fn_factory_with_config(move |session: v5::Session<ProducerIdentity>| {
             let forwarder_peers_service = forwarder_peers_service.clone();
+            let mqtt_peers_tx = mqtt_peers_tx.clone();
             async move {
                 Ok::<_, MqttError>(fn_service(move |control: v5::Control<MqttError>| {
                     let session = session.clone();
                     let forwarder_peers_service = forwarder_peers_service.clone();
+                    let mqtt_peers_tx = mqtt_peers_tx.clone();
 
                     async move {
                         match control {
@@ -219,6 +222,43 @@ impl MqttBroker {
                                             session.state().producer_id,
                                             topic,
                                         );
+                                    } else if is_forwarder_peers_topic(&topic) {
+                                        let mut rx = mqtt_peers_tx.subscribe();
+                                        let session = session.clone();
+                                        let forwarder_peers_service =
+                                            forwarder_peers_service.clone();
+                                        let topic = topic.clone();
+                                        ntex::rt::spawn(async move {
+                                            loop {
+                                                match rx.recv().await {
+                                                    Ok(forwarder_id) => {
+                                                        if forwarder_id == session.state().producer_id
+                                                            && let Err(err) = publish_forwarder_peers_snapshot(
+                                                                &forwarder_peers_service,
+                                                                &session,
+                                                                &topic,
+                                                            ) {
+                                                                log::warn!("MQTT forwarder_peers background push failed: {err}");
+                                                                break;
+                                                            }
+                                                    }
+                                                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                                                        break;
+                                                    }
+                                                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                                                        // Lagged, just try to publish a new snapshot
+                                                        if let Err(err) = publish_forwarder_peers_snapshot(
+                                                            &forwarder_peers_service,
+                                                            &session,
+                                                            &topic,
+                                                        ) {
+                                                            log::warn!("MQTT forwarder_peers background push failed: {err}");
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        });
                                     }
                                 }
 
@@ -272,7 +312,11 @@ impl MqttBroker {
     /// Publish flow:
     /// - Resolve session identity.
     /// - Delegate to ingest service for authorization and ack decision.
-    pub async fn run(config: MqttBrokerConfig, pool: DbPool) -> io::Result<()> {
+    pub async fn run(
+        config: MqttBrokerConfig,
+        pool: DbPool,
+        mqtt_peers_tx: tokio::sync::broadcast::Sender<uuid::Uuid>,
+    ) -> io::Result<()> {
         let auth = MqttAuthService::from(pool.clone());
         let ingest = MqttIngestService::new(pool.clone());
         let forwarder_peers_service = MqttForwarderPeersService::from(pool);
@@ -293,6 +337,7 @@ impl MqttBroker {
                 let ingest = ingest.clone();
                 let tls_acceptor = tls_acceptor.clone();
                 let forwarder_peers_service = forwarder_peers_service.clone();
+                let mqtt_peers_tx = mqtt_peers_tx.clone();
 
                 async move {
                     chain_factory(ntex::server::openssl::SslAcceptor::new(
@@ -336,6 +381,7 @@ impl MqttBroker {
                         })
                         .control(Self::control_service_factory(
                             forwarder_peers_service.clone(),
+                            mqtt_peers_tx.clone(),
                         ))
                         .publish(fn_factory_with_config(
                             move |session: v5::Session<ProducerIdentity>| {

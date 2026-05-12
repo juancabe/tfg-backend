@@ -15,7 +15,7 @@ pub mod jwt_extractor {
 
         async fn from_request_parts(
             parts: &mut axum::http::request::Parts,
-            AppState { pool }: &AppState,
+            AppState { pool, .. }: &AppState,
         ) -> Result<Self, Self::Rejection> {
             let auth = parts
                 .headers

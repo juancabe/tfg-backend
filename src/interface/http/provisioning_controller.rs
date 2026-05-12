@@ -30,7 +30,7 @@ use crate::{
 )]
 pub async fn post_pending(
     jwt: JWT,
-    State(AppState { pool }): State<AppState>,
+    State(AppState { pool, .. }): State<AppState>,
     Json(body): Json<CreatePendingProvisioningRequest>,
 ) -> Result<(StatusCode, Json<CreatePendingProvisioningResponse>), HttpApiError> {
     body.validate().map_err(|e| {
@@ -52,7 +52,7 @@ pub async fn post_pending(
 )]
 pub async fn get_pending(
     jwt: JWT,
-    State(AppState { pool }): State<AppState>,
+    State(AppState { pool, .. }): State<AppState>,
 ) -> Result<Json<ListPendingProvisioningResponse>, HttpApiError> {
     let service: ProvisioningService<_, _, _, _> = pool.into();
     let out = service.list_pending_for_owner(jwt.user_id)?;
@@ -69,7 +69,7 @@ pub async fn get_pending(
 )]
 pub async fn get_available_forwarders(
     jwt: JWT,
-    State(AppState { pool }): State<AppState>,
+    State(AppState { pool, .. }): State<AppState>,
     Path(group_id): Path<Uuid>,
 ) -> Result<Json<ListAvailableForwardersResponse>, HttpApiError> {
     let service: ProvisioningService<_, _, _, _> = pool.into();
@@ -88,7 +88,7 @@ pub async fn get_available_forwarders(
 )]
 pub async fn post_pending_confirm(
     jwt: JWT,
-    State(AppState { pool }): State<AppState>,
+    State(state): State<AppState>,
     Path(id): Path<Uuid>,
     Json(body): Json<ConfirmPendingProvisioningRequest>,
 ) -> Result<Json<ConfirmPendingProvisioningResponse>, HttpApiError> {
@@ -97,8 +97,13 @@ pub async fn post_pending_confirm(
             crate::interface::types::TypeError::Validation(e.to_string()),
         ))
     })?;
-    let service: ProvisioningService<_, _, _, _> = pool.into();
+    let service: ProvisioningService<_, _, _, _> = state.pool.into();
     let out = service.confirm_pending(jwt.user_id, id, body)?;
+    if let Some(forwarder_id) = out.forwarder_id {
+        if let Err(e) = state.mqtt_peers_tx.send(forwarder_id) {
+            log::warn!("Failed to broadcast forwarder update: {}", e);
+        }
+    }
     Ok(Json(out))
 }
 
@@ -112,7 +117,7 @@ pub async fn post_pending_confirm(
 )]
 pub async fn post_pending_cancel(
     jwt: JWT,
-    State(AppState { pool }): State<AppState>,
+    State(AppState { pool, .. }): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<CancelPendingProvisioningResponse>, HttpApiError> {
     let service: ProvisioningService<_, _, _, _> = pool.into();
@@ -164,7 +169,10 @@ mod tests {
     }
 
     fn state(pool: crate::dao::DbPool) -> State<AppState> {
-        State(AppState { pool })
+        State(AppState {
+            pool,
+            mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+        })
     }
 
     fn mk_pending_req(
@@ -708,6 +716,48 @@ mod tests {
             .0
             .pendings;
         assert_eq!(listed.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_confirm_pending_broadcasts_mqtt_event() {
+        let ctx = setup();
+        let user = create_test_user(&ctx.pool, "prov_bcast");
+        let loc = create_test_location(&ctx.pool, "prov_bcast");
+        let group = create_test_group(&ctx.pool, user.id, loc.id, "prov_bcast");
+
+        let forwarder = create_test_producer(&ctx.pool, group.id, loc.id, "fwd_bcast");
+        make_forwarder_available(&ctx.pool, forwarder.id, 2021, "a2V5LWZ3ZA==");
+
+        let (tx, mut rx) = tokio::sync::broadcast::channel(10);
+        let state = State(AppState { pool: ctx.pool.clone(), mqtt_peers_tx: tx });
+
+        let mut req = mk_pending_req(group.id, None);
+        req.forwarder_id = Some(forwarder.id);
+
+        let created = post_pending(
+            mock_jwt(user.id, user.login.clone()),
+            state.clone(),
+            Json(req),
+        )
+        .await
+        .expect("create pending")
+        .1
+        .0;
+
+        let _confirmed = post_pending_confirm(
+            mock_jwt(user.id, user.login.clone()),
+            state,
+            Path(created.pending.id),
+            Json(ConfirmPendingProvisioningRequest {
+                x25519_pub_key_bytes_base64: None,
+                lora_addr: None,
+            }),
+        )
+        .await
+        .expect("confirm pending");
+
+        let received = rx.try_recv().unwrap();
+        assert_eq!(received, forwarder.id);
     }
 
     #[allow(dead_code)]

@@ -34,7 +34,7 @@ pub struct GetProducerDataResponse {
 )]
 pub async fn get_templates(
     jwt: JWT,
-    State(AppState { pool }): State<AppState>,
+    State(AppState { pool, .. }): State<AppState>,
 ) -> Result<Json<GetTemplatesResponse>, HttpApiError> {
     let service = TemplateDataService::new(
         PgTemplateDataDao::new(pool.clone()),
@@ -62,7 +62,7 @@ pub async fn get_templates(
 )]
 pub async fn get_producer_data(
     jwt: JWT,
-    State(AppState { pool }): State<AppState>,
+    State(AppState { pool, .. }): State<AppState>,
     Path(id): Path<Uuid>,
     Query(query): Query<ProducerDataQuery>,
 ) -> Result<Json<GetProducerDataResponse>, HttpApiError> {
@@ -108,7 +108,10 @@ mod tests {
 
         let res = get_templates(
             mock_jwt(user.id, user.login),
-            State(AppState { pool: ctx.pool }),
+            State(AppState {
+                pool: ctx.pool,
+                mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+            }),
         )
         .await
         .expect("get templates");
@@ -142,6 +145,7 @@ mod tests {
             mock_jwt(owner.id, owner.login),
             State(AppState {
                 pool: ctx.pool.clone(),
+                mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
             }),
             Path(producer.id),
             Query(ProducerDataQuery {
@@ -158,7 +162,10 @@ mod tests {
 
         let other_res = get_producer_data(
             mock_jwt(other.id, other.login),
-            State(AppState { pool: ctx.pool }),
+            State(AppState {
+                pool: ctx.pool,
+                mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+            }),
             Path(producer.id),
             Query(ProducerDataQuery {
                 template_id: None,

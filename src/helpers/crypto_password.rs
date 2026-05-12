@@ -1,4 +1,4 @@
-use bcrypt::{hash, verify, DEFAULT_COST};
+use bcrypt::{DEFAULT_COST, hash, verify};
 use openssl::rand::rand_bytes;
 
 fn to_hex(bytes: &[u8]) -> String {

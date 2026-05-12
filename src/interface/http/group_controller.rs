@@ -4,8 +4,8 @@ use axum::{
     http::StatusCode,
 };
 use serde::{Deserialize, Serialize};
-use validator::Validate;
 use uuid::Uuid;
+use validator::Validate;
 
 use crate::{
     dao::{group::PgGroupDao, location::PgLocationDao},
@@ -58,7 +58,7 @@ pub struct PatchGroupResponse {
 )]
 pub async fn get_groups(
     jwt: JWT,
-    State(AppState { pool }): State<AppState>,
+    State(AppState { pool, .. }): State<AppState>,
 ) -> Result<Json<GetGroupsResponse>, HttpApiError> {
     let g_service: GroupService<PgGroupDao, PgLocationDao> = pool.into();
     let groups = g_service.get_groups(jwt.user_id)?;
@@ -79,7 +79,7 @@ pub async fn get_groups(
 )]
 pub async fn get_group_by_id(
     jwt: JWT,
-    State(AppState { pool }): State<AppState>,
+    State(AppState { pool, .. }): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<GetGroupResponse>, HttpApiError> {
     let g_service: GroupService<PgGroupDao, PgLocationDao> = pool.into();
@@ -99,7 +99,7 @@ pub async fn get_group_by_id(
 )]
 pub async fn post_group(
     jwt: JWT,
-    State(AppState { pool }): State<AppState>,
+    State(AppState { pool, .. }): State<AppState>,
     Json(body): Json<PostGroupBody>,
 ) -> Result<(StatusCode, Json<PostGroupResponse>), HttpApiError> {
     body.group.validate().map_err(|e| {
@@ -123,7 +123,7 @@ pub async fn post_group(
 )]
 pub async fn patch_group_by_id(
     jwt: JWT,
-    State(AppState { pool }): State<AppState>,
+    State(AppState { pool, .. }): State<AppState>,
     Path(id): Path<Uuid>,
     Json(body): Json<PatchGroupBody>,
 ) -> Result<Json<PatchGroupResponse>, HttpApiError> {
@@ -147,7 +147,7 @@ pub async fn patch_group_by_id(
 )]
 pub async fn delete_group_by_id(
     jwt: JWT,
-    State(AppState { pool }): State<AppState>,
+    State(AppState { pool, .. }): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, HttpApiError> {
     let g_service: GroupService<PgGroupDao, PgLocationDao> = pool.into();
@@ -158,9 +158,9 @@ pub async fn delete_group_by_id(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::interface::types::location::NewLocation;
     use crate::service::auth::JWTKind;
     use crate::test_utils::{create_test_group, create_test_location, create_test_user, setup};
-    use crate::interface::types::location::NewLocation;
     use axum::extract::{Path, State};
 
     fn mock_jwt(user_id: Uuid, login: String) -> JWT {
@@ -187,6 +187,7 @@ mod tests {
             mock_jwt(user.id, user.login),
             State(AppState {
                 pool: ctx.pool.clone(),
+                mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
             }),
             Path(group.id),
             Json(PatchGroupBody {
@@ -216,6 +217,7 @@ mod tests {
             mock_jwt(other.id, other.login),
             State(AppState {
                 pool: ctx.pool.clone(),
+                mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
             }),
             Path(group.id),
             Json(PatchGroupBody {
@@ -235,7 +237,10 @@ mod tests {
     async fn test_post_group_invalid_name_validation() {
         let ctx = setup();
         let user = create_test_user(&ctx.pool, "post_group_invalid_name");
-        let state = State(AppState { pool: ctx.pool });
+        let state = State(AppState {
+            pool: ctx.pool,
+            mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+        });
 
         let res = post_group(
             mock_jwt(user.id, user.login),
@@ -269,6 +274,7 @@ mod tests {
             mock_jwt(user.id, user.login),
             State(AppState {
                 pool: ctx.pool.clone(),
+                mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
             }),
             Path(group.id),
         )
@@ -290,6 +296,7 @@ mod tests {
             mock_jwt(other.id, other.login),
             State(AppState {
                 pool: ctx.pool.clone(),
+                mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
             }),
             Path(group.id),
         )

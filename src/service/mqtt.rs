@@ -530,7 +530,12 @@ mod tests {
         let ctx = setup();
         let owner = create_test_user(&ctx.pool, "mqtt_auth_delegate_forwarder_user");
         let loc = create_test_location(&ctx.pool, "mqtt_auth_delegate_forwarder_user");
-        let group = create_test_group(&ctx.pool, owner.id, loc.id, "mqtt_auth_delegate_forwarder_user");
+        let group = create_test_group(
+            &ctx.pool,
+            owner.id,
+            loc.id,
+            "mqtt_auth_delegate_forwarder_user",
+        );
 
         let forwarder = create_test_producer(&ctx.pool, group.id, loc.id, "forwarder");
         let delegated = create_test_producer(&ctx.pool, group.id, loc.id, "delegated");

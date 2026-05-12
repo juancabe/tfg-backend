@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
-use validator::Validate;
 use thiserror::Error;
+use validator::Validate;
 
 use crate::{interface::types::TypeError, model::models};
 
@@ -30,7 +30,9 @@ impl TryFrom<NewLocation> for models::NewLocation {
     type Error = TypeError;
 
     fn try_from(value: NewLocation) -> Result<Self, Self::Error> {
-        value.validate().map_err(|e| TypeError::Validation(e.to_string()))?;
+        value
+            .validate()
+            .map_err(|e| TypeError::Validation(e.to_string()))?;
         match (value.geo_lat, value.geo_long) {
             (None, None) | (Some(_), Some(_)) => Ok(Self {
                 name: value.name,

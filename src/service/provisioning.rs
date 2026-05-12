@@ -357,6 +357,7 @@ where
             pending_id: pending.id,
             producer_id: producer.id,
             status: PendingProducerRegistrationStatus::Confirmed as i16,
+            forwarder_id: pending.forwarder_id,
         })
     }
 

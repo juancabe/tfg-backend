@@ -1,8 +1,10 @@
+use crate::helpers::validation::{
+    DESCRIPTION_MAX_LEN, NAME_MAX_LEN, NAME_MIN_LEN, validate_firmware_name,
+};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use validator::Validate;
-use crate::helpers::validation::{DESCRIPTION_MAX_LEN, NAME_MAX_LEN, NAME_MIN_LEN, validate_firmware_name};
 use uuid::Uuid;
+use validator::Validate;
 
 use crate::{
     interface::types::location::{Location, NewLocation},

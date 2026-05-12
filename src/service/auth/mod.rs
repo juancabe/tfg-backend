@@ -502,7 +502,9 @@ impl<D: IdentityDao> AuthService<D> {
             if let Err(delete_err) = self.dao.delete_user(&user.id) {
                 log::error!("Failed to clean up user after auth method failure: {delete_err:?}");
             }
-            return Err(ServiceError::DbError(crate::dao::DaoError::OtherRare("Failed to create auth method".to_string())));
+            return Err(ServiceError::DbError(crate::dao::DaoError::OtherRare(
+                "Failed to create auth method".to_string(),
+            )));
         };
 
         // TODO: Auth methods that don't require a confirmation's Session Tokens may be returned here
@@ -991,7 +993,5 @@ mod tests {
                 .unwrap();
             assert_eq!(pr.attempts, 1);
         }
-
-
     }
 }

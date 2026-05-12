@@ -93,15 +93,21 @@ impl MqttDao for PgMqttDao {
             .filter(producers::name.eq(producer_name_in))
             .filter(groups::name.eq(group_name_in))
             .filter(mqtt_broker_auths::username.eq(mqtt_username_in))
-            .select((producers::id, mqtt_broker_auths::topic, mqtt_broker_auths::username))
+            .select((
+                producers::id,
+                mqtt_broker_auths::topic,
+                mqtt_broker_auths::username,
+            ))
             .first::<(Uuid, String, String)>(conn)
             .optional()
             .map(|row| {
-                row.map(|(producer_id, topic, mqtt_username)| DelegatedPublishTargetRow {
-                    producer_id,
-                    topic,
-                    mqtt_username,
-                })
+                row.map(
+                    |(producer_id, topic, mqtt_username)| DelegatedPublishTargetRow {
+                        producer_id,
+                        topic,
+                        mqtt_username,
+                    },
+                )
             })
             .map_err(Into::into)
     }
@@ -124,15 +130,21 @@ impl MqttDao for PgMqttDao {
             .filter(producers::forwarder_id.eq(Some(forwarder_id_in)))
             .filter(producers::name.eq(producer_name_in))
             .filter(groups::name.eq(group_name_in))
-            .select((producers::id, mqtt_broker_auths::topic, mqtt_broker_auths::username))
+            .select((
+                producers::id,
+                mqtt_broker_auths::topic,
+                mqtt_broker_auths::username,
+            ))
             .first::<(Uuid, String, String)>(conn)
             .optional()
             .map(|row| {
-                row.map(|(producer_id, topic, mqtt_username)| DelegatedPublishTargetRow {
-                    producer_id,
-                    topic,
-                    mqtt_username,
-                })
+                row.map(
+                    |(producer_id, topic, mqtt_username)| DelegatedPublishTargetRow {
+                        producer_id,
+                        topic,
+                        mqtt_username,
+                    },
+                )
             })
             .map_err(Into::into)
     }

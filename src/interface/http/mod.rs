@@ -80,11 +80,18 @@ pub mod template_data_controller;
 pub struct Http {}
 
 impl Http {
-    pub async fn run_http_server(addr: SocketAddr, pool: DbPool) -> Result<(), HttpError> {
+    pub async fn run_http_server(
+        addr: SocketAddr,
+        pool: DbPool,
+        mqtt_peers_tx: tokio::sync::broadcast::Sender<uuid::Uuid>,
+    ) -> Result<(), HttpError> {
         let listener = tokio::net::TcpListener::bind(addr).await?;
         log::info!("Created TcpListener on {:?}", addr);
 
-        let state = AppState { pool };
+        let state = AppState {
+            pool,
+            mqtt_peers_tx,
+        };
 
         let openapi_doc = ApiDoc::openapi();
 

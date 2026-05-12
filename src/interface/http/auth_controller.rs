@@ -162,7 +162,7 @@ fn validate_reset_code(value: &str) -> Result<(), validator::ValidationError> {
     responses((status = 200, description = "Successfully refreshed session", body = RefreshSessionResponse))
 )]
 pub async fn post_refresh(
-    State(AppState { pool }): State<AppState>,
+    State(AppState { pool, .. }): State<AppState>,
     payload: Result<Json<RefreshPayload>, JsonRejection>,
 ) -> Result<Json<RefreshSessionResponse>, HttpApiError> {
     let payload = payload?.0;
@@ -190,7 +190,7 @@ pub async fn post_refresh(
 )]
 
 pub async fn post_register(
-    State(AppState { pool }): State<AppState>,
+    State(AppState { pool, .. }): State<AppState>,
     payload: Result<Json<RegisterPayload>, JsonRejection>,
 ) -> Result<Json<RegisterResponse>, HttpApiError> {
     let payload = payload?.0;
@@ -221,7 +221,7 @@ pub async fn post_register(
     responses((status = 200, description = "Tried to log in, may have provided incorrect credentials", body = LoginResponse))
 )]
 pub async fn post_login(
-    State(AppState { pool }): State<AppState>,
+    State(AppState { pool, .. }): State<AppState>,
     payload: Result<Json<LoginPayload>, JsonRejection>,
 ) -> Result<LoginResponse, HttpApiError> {
     let payload = payload?.0;
@@ -258,7 +258,7 @@ pub async fn post_login(
 )]
 pub async fn post_change_password(
     jwt: JWT,
-    State(AppState { pool }): State<AppState>,
+    State(AppState { pool, .. }): State<AppState>,
     payload: Result<Json<ChangePasswordPayload>, JsonRejection>,
 ) -> Result<Json<ChangePasswordResponse>, HttpApiError> {
     let payload = payload?.0;
@@ -289,7 +289,7 @@ pub async fn post_change_password(
     responses((status = 204, description = "Password reset code sent"))
 )]
 pub async fn post_password_reset_request(
-    State(AppState { pool }): State<AppState>,
+    State(AppState { pool, .. }): State<AppState>,
     payload: Result<Json<PasswordResetRequestPayload>, JsonRejection>,
 ) -> Result<StatusCode, HttpApiError> {
     let payload = payload?.0;
@@ -316,7 +316,7 @@ pub async fn post_password_reset_request(
     responses((status = 204, description = "Password reset"))
 )]
 pub async fn post_password_reset(
-    State(AppState { pool }): State<AppState>,
+    State(AppState { pool, .. }): State<AppState>,
     payload: Result<Json<PasswordResetPayload>, JsonRejection>,
 ) -> Result<StatusCode, HttpApiError> {
     let payload = payload?.0;
@@ -348,7 +348,7 @@ pub async fn post_password_reset(
     )
 )]
 pub async fn get_verify_email(
-    State(AppState { pool }): State<AppState>,
+    State(AppState { pool, .. }): State<AppState>,
     Query(query): Query<VerifyEmailQuery>,
 ) -> Result<Html<String>, HttpApiError> {
     let dao = PgIdentityDao::new(pool);
@@ -412,7 +412,10 @@ mod tests {
         #[tokio::test]
         async fn test_post_register_success() {
             let ctx = setup();
-            let state = State(AppState { pool: ctx.pool });
+            let state = State(AppState {
+                pool: ctx.pool,
+                mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+            });
             let payload = Ok(Json(RegisterPayload {
                 login: "test_user".to_string(),
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
@@ -432,6 +435,7 @@ mod tests {
             let ctx = setup();
             let state = State(AppState {
                 pool: ctx.pool.clone(),
+                mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
             });
             let payload = RegisterPayload {
                 login: "test_user".to_string(),
@@ -465,6 +469,7 @@ mod tests {
             let ctx = setup();
             let state = State(AppState {
                 pool: ctx.pool.clone(),
+                mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
             });
 
             // Register first
@@ -498,7 +503,10 @@ mod tests {
         #[tokio::test]
         async fn test_post_login_invalid_credentials() {
             let ctx = setup();
-            let state = State(AppState { pool: ctx.pool });
+            let state = State(AppState {
+                pool: ctx.pool,
+                mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+            });
 
             let login_payload = Ok(Json(LoginPayload {
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
@@ -516,7 +524,10 @@ mod tests {
         #[tokio::test]
         async fn test_post_register_invalid_login() {
             let ctx = setup();
-            let state = State(AppState { pool: ctx.pool });
+            let state = State(AppState {
+                pool: ctx.pool,
+                mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+            });
             let payload = Ok(Json(RegisterPayload {
                 login: "ab".to_string(),
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
@@ -532,7 +543,10 @@ mod tests {
         #[tokio::test]
         async fn test_post_register_invalid_email() {
             let ctx = setup();
-            let state = State(AppState { pool: ctx.pool });
+            let state = State(AppState {
+                pool: ctx.pool,
+                mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+            });
             let payload = Ok(Json(RegisterPayload {
                 login: "test_user".to_string(),
                 auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
@@ -550,6 +564,7 @@ mod tests {
             let ctx = setup();
             let state = State(AppState {
                 pool: ctx.pool.clone(),
+                mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
             });
 
             let register_payload = RegisterPayload {
@@ -597,6 +612,7 @@ mod tests {
             let ctx = setup();
             let state = State(AppState {
                 pool: ctx.pool.clone(),
+                mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
             });
 
             // Register
@@ -633,6 +649,7 @@ mod tests {
             let ctx = setup();
             let state = State(AppState {
                 pool: ctx.pool.clone(),
+                mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
             });
 
             // Register and login to get refresh token
@@ -678,7 +695,10 @@ mod tests {
         #[tokio::test]
         async fn test_post_refresh_invalid_token() {
             let ctx = setup();
-            let state = State(AppState { pool: ctx.pool });
+            let state = State(AppState {
+                pool: ctx.pool,
+                mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+            });
 
             let refresh_payload = Ok(Json(RefreshPayload {
                 refresh_token: "invalid_token".to_string(),
@@ -693,6 +713,7 @@ mod tests {
             let ctx = setup();
             let state = State(AppState {
                 pool: ctx.pool.clone(),
+                mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
             });
 
             // Register and login to get tokens
@@ -740,6 +761,7 @@ mod tests {
             let ctx = setup();
             let state = State(AppState {
                 pool: ctx.pool.clone(),
+                mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
             });
 
             // Register and login to get refresh token
@@ -795,6 +817,7 @@ mod tests {
             let ctx = setup();
             let state = State(AppState {
                 pool: ctx.pool.clone(),
+                mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
             });
 
             let register_payload = RegisterPayload {
@@ -852,6 +875,7 @@ mod tests {
             let ctx = setup();
             let state = State(AppState {
                 pool: ctx.pool.clone(),
+                mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
             });
 
             let register_payload = RegisterPayload {
@@ -878,7 +902,10 @@ mod tests {
         #[tokio::test]
         async fn test_post_password_reset_request_unknown_email_no_error() {
             let ctx = setup();
-            let state = State(AppState { pool: ctx.pool });
+            let state = State(AppState {
+                pool: ctx.pool,
+                mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+            });
 
             let payload = Ok(Json(PasswordResetRequestPayload {
                 email: "missing@example.com".to_string(),
@@ -893,6 +920,7 @@ mod tests {
             let ctx = setup();
             let state = State(AppState {
                 pool: ctx.pool.clone(),
+                mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
             });
 
             let register_payload = RegisterPayload {
@@ -943,7 +971,10 @@ mod tests {
         #[tokio::test]
         async fn test_post_password_reset_invalid_code_format() {
             let ctx = setup();
-            let state = State(AppState { pool: ctx.pool });
+            let state = State(AppState {
+                pool: ctx.pool,
+                mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+            });
 
             let payload = Ok(Json(PasswordResetPayload {
                 email: "test@example.com".to_string(),

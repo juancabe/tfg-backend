@@ -39,16 +39,21 @@ async fn main() {
     let http_listen_address =
         std::net::SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, DEFAULT_PORT));
 
+    let (mqtt_peers_tx, _) = tokio::sync::broadcast::channel::<uuid::Uuid>(1024);
+
     let mqtt_config = MqttBrokerConfig::from_env();
     let mqtt_pool = pool.clone();
+    let mqtt_peers_tx_clone = mqtt_peers_tx.clone();
     let (mqtt_tx, mqtt_rx) = oneshot::channel();
     std::thread::spawn(move || {
-        let result = ntex::rt::System::new("mqtt-broker", ntex::rt::DefaultRuntime)
-            .block_on(async move { MqttBroker::run(mqtt_config, mqtt_pool).await });
+        let result =
+            ntex::rt::System::new("mqtt-broker", ntex::rt::DefaultRuntime).block_on(async move {
+                MqttBroker::run(mqtt_config, mqtt_pool, mqtt_peers_tx_clone).await
+            });
         let _ = mqtt_tx.send(result);
     });
 
-    let http_fut = http::Http::run_http_server(http_listen_address, pool);
+    let http_fut = http::Http::run_http_server(http_listen_address, pool, mqtt_peers_tx);
 
     select! {
         val = mqtt_rx => {
