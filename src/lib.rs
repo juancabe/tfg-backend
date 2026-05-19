@@ -25,6 +25,7 @@ pub mod service;
 #[cfg(test)]
 pub mod test_utils;
 
+/// Application configuration loaded from environment variables.
 pub mod config {
     use std::sync::OnceLock;
 
@@ -80,6 +81,7 @@ pub mod config {
     const DEFAULT_MQTT_PROVISION_PORT: i16 = 8883;
 
     impl Config {
+        /// Loads configuration from environment variables.
         pub fn init() -> Self {
             Self {
                 http_port: get_env_var_or_log_error("HTTP_PORT").unwrap_or(DEFAULT_PORT),
@@ -108,49 +110,64 @@ pub mod config {
             }
         }
 
+        /// Returns the HTTP server port.
         pub fn get_http_port(&self) -> u16 {
             self.http_port
         }
+        /// Returns the PostgreSQL connection string.
         pub fn get_database_url(&self) -> &str {
             &self.database_url
         }
+        /// Returns the server hostname.
         pub fn get_server_name(&self) -> &str {
             &self.server_name
         }
+        /// Returns the JWT signing key (base64).
         pub fn get_jwt_key_base64(&self) -> &str {
             &self.jwt_key_base64
         }
+        /// Returns the Gmail SMTP user.
         pub fn get_gmail_user(&self) -> &str {
             &self.gmail_user
         }
+        /// Returns the Gmail SMTP password.
         pub fn get_gmail_pass(&self) -> &str {
             &self.gmail_pass
         }
+        /// Returns the MQTT bind host.
         pub fn get_mqtt_bind_host(&self) -> &str {
             &self.mqtt_bind_host
         }
+        /// Returns the MQTT bind port.
         pub fn get_mqtt_bind_port(&self) -> u16 {
             self.mqtt_bind_port
         }
+        /// Returns the MQTT TLS certificate path.
         pub fn get_mqtt_tls_cert_path(&self) -> &str {
             &self.mqtt_tls_cert_path
         }
+        /// Returns the MQTT TLS key path.
         pub fn get_mqtt_tls_key_path(&self) -> &str {
             &self.mqtt_tls_key_path
         }
+        /// Returns the number of MQTT worker threads.
         pub fn get_mqtt_workers(&self) -> usize {
             self.mqtt_workers
         }
+        /// Returns the public MQTT host for provisioned devices.
         pub fn get_mqtt_provision_host(&self) -> &str {
             &self.mqtt_provision_host
         }
+        /// Returns the public MQTT port for provisioned devices.
         pub fn get_mqtt_provision_port(&self) -> i16 {
             self.mqtt_provision_port
         }
     }
 
+    /// Global application configuration singleton.
     pub static CONFIG: OnceLock<Config> = OnceLock::new();
 
+    /// Returns the global application configuration.
     pub fn get() -> &'static Config {
         CONFIG.get().expect("Config must be initialized before use")
     }

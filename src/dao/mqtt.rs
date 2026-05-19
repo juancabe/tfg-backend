@@ -1,3 +1,5 @@
+//! MQTT broker DAO operations for authentication, data ingestion, and forwarder peer lookups.
+
 use crate::{
     dao::{DaoError, DbPool},
     model::models::{MqttBrokerAuth, NewData},
@@ -5,19 +7,26 @@ use crate::{
 use diesel::prelude::*;
 use uuid::Uuid;
 
+/// Represents a row used to resolve delegated publish targets.
 #[derive(Debug, Clone)]
 pub struct DelegatedPublishTargetRow {
+    /// The ID of the target producer.
     pub producer_id: Uuid,
+    /// The MQTT topic to publish to.
     pub topic: String,
+    /// The MQTT username for authentication.
     pub mqtt_username: String,
 }
 
+/// Trait defining MQTT-related database operations.
 pub trait MqttDao {
+    /// Finds MQTT broker auth credentials by username.
     fn find_broker_auth_by_username(
         &self,
         username_in: &str,
     ) -> Result<Option<MqttBrokerAuth>, DaoError>;
 
+    /// Finds a delegated publish target by forwarder, username, group, and producer name.
     fn find_delegated_publish_target(
         &self,
         forwarder_id: Uuid,
@@ -26,6 +35,7 @@ pub trait MqttDao {
         producer_name_in: &str,
     ) -> Result<Option<DelegatedPublishTargetRow>, DaoError>;
 
+    /// Finds a delegated publish target by forwarder, group, and producer name.
     fn find_delegated_publish_target_by_producer(
         &self,
         forwarder_id: Uuid,
@@ -33,12 +43,15 @@ pub trait MqttDao {
         producer_name_in: &str,
     ) -> Result<Option<DelegatedPublishTargetRow>, DaoError>;
 
+    /// Inserts a new data record.
     fn insert_data(&self, new_data: NewData) -> Result<(), DaoError>;
 
+    /// Lists peer producer IDs and their x25519 public keys for a forwarder.
     fn list_forwarder_peer_keys(&self, forwarder_id: Uuid)
     -> Result<Vec<(Uuid, String)>, DaoError>;
 }
 
+/// PostgreSQL implementation of [`MqttDao`].
 #[derive(Clone)]
 pub struct PgMqttDao {
     pool: DbPool,
@@ -51,6 +64,7 @@ impl From<DbPool> for PgMqttDao {
 }
 
 impl PgMqttDao {
+    /// Creates a new [`PgMqttDao`] with the given connection pool.
     pub fn new(pool: DbPool) -> Self {
         Self { pool }
     }
@@ -182,7 +196,7 @@ impl MqttDao for PgMqttDao {
 mod tests {
     use super::*;
 
-    use crate::{
+use crate::{
         helpers::data_templates::RANDOMFLOAT_TEMPLATE_ID,
         model::{
             models::{NewInternetAuth, NewMqttBrokerAuth},

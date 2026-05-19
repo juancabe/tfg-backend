@@ -1,3 +1,5 @@
+//! Server entry point. Initializes configuration, database, MQTT broker, and HTTP server.
+
 use diesel::{PgConnection, r2d2::ConnectionManager};
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use dotenvy::dotenv;
@@ -11,6 +13,7 @@ use backend::interface::mqtt::{MqttBroker, MqttBrokerConfig};
 
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
 
+/// Runs all pending database migrations.
 fn run_migrations(pool: &DbPool) {
     let mut conn = pool.get().expect("Failed to get DB conn");
     let migrations = conn

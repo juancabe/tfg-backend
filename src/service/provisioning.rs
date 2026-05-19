@@ -1,3 +1,5 @@
+//! Device provisioning service layer.
+
 
 use chrono::{Duration, Utc};
 use diesel::Connection;
@@ -37,18 +39,28 @@ const DEFAULT_PENDING_TTL_MINUTES: i64 = 15;
 // validation logic and messages.
 const MAX_FIRMWARE_NAME_LEN: usize = 32;
 
+/// A producer candidate eligible to act as a LoRa forwarder.
 #[derive(Debug, Clone)]
 pub struct ForwarderCandidate {
+    /// Producer ID.
     pub id: Uuid,
+    /// Group ID the producer belongs to.
     pub group_id: Uuid,
+    /// Producer name.
     pub name: String,
+    /// BLE device name.
     pub ble_name: String,
+    /// Producer description.
     pub description: String,
+    /// LoRa address.
     pub lora_addr: i32,
+    /// Whether the producer forwards LoRa traffic.
     pub forward_lora: bool,
+    /// X25519 public key in base64.
     pub x25519_pub_key_bytes_base64: String,
 }
 
+/// Service for device provisioning operations.
 pub struct ProvisioningService<Pd, Gd, Ld, Prd>
 where
     Pd: PendingRegistrationDao,
@@ -69,6 +81,7 @@ where
     Ld: LocationDao,
     Prd: ProducerDao,
 {
+    /// Creates a new [`ProvisioningService`] with the given DAOs.
     pub fn new(pending_dao: Pd, group_dao: Gd, location_dao: Ld, producer_dao: Prd) -> Self {
         Self {
             pending_dao,
@@ -78,6 +91,7 @@ where
         }
     }
 
+    /// Creates a pending provisioning request for a new device.
     pub fn create_pending(
         &self,
         owner_user_id: Uuid,
@@ -222,6 +236,7 @@ where
         })
     }
 
+    /// Lists all pending provisioning requests for an owner.
     pub fn list_pending_for_owner(
         &self,
         owner_user_id: Uuid,
@@ -232,6 +247,7 @@ where
         })
     }
 
+    /// Lists available forwarder candidates for a group.
     pub fn list_available_forwarders(
         &self,
         owner_user_id: Uuid,
@@ -259,6 +275,7 @@ where
         Ok(ListAvailableForwardersResponse { forwarders })
     }
 
+    /// Confirms a pending provisioning request, creating the producer and auth records.
     pub fn confirm_pending(
         &self,
         owner_user_id: Uuid,
@@ -354,6 +371,7 @@ where
         })
     }
 
+    /// Cancels a pending provisioning request.
     pub fn cancel_pending(
         &self,
         owner_user_id: Uuid,

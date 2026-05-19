@@ -1,3 +1,5 @@
+//! MQTT data ingestion handler for processing accepted publishes.
+
 use ntex_mqtt::v5::{self, codec::PublishAckReason};
 #[cfg(test)]
 use uuid::Uuid;
@@ -9,6 +11,7 @@ use crate::{
     },
 };
 
+/// Maximum allowed MQTT publish payload size in bytes.
 pub const MAX_PAYLOAD_BYTES: usize = 4096;
 
 /// Ingest service for accepted MQTT publishes.

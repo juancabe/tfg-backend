@@ -1,3 +1,5 @@
+//! Embedded MQTT broker bootstrap and runtime wiring.
+
 use std::{io, str};
 
 use ntex::{
@@ -82,10 +84,13 @@ fn publish_forwarder_peers_snapshot(
 /// startup/runtime variants as broker responsibilities grow.
 #[derive(Debug, Error)]
 pub enum MqttError {
+    /// A general MQTT initialization error occurred.
     #[error("MQTT initialization error")]
     Init,
+    /// A TLS initialization error occurred.
     #[error("MQTT TLS initialization error: {0}")]
     TlsInit(String),
+    /// A TLS accept error occurred.
     #[error("MQTT TLS accept error: {0}")]
     TlsAccept(String),
 }

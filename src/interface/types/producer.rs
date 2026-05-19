@@ -1,3 +1,6 @@
+//! Producer-related API type definitions.
+#![allow(missing_docs)]
+
 use crate::helpers::validation::{
     DESCRIPTION_MAX_LEN, NAME_MAX_LEN, NAME_MIN_LEN, validate_firmware_name,
 };
@@ -11,6 +14,7 @@ use crate::{
     model::models,
 };
 
+/// Request body for creating a new producer.
 #[derive(Deserialize, Serialize, Debug, utoipa::ToSchema, Validate)]
 pub struct NewProducer {
     pub location: NewLocation,
@@ -26,6 +30,7 @@ pub struct NewProducer {
     pub forward_lora: Option<bool>,
 }
 
+/// Request body for updating an existing producer.
 #[derive(Deserialize, Serialize, Debug, utoipa::ToSchema, Validate)]
 pub struct UpdateProducer {
     #[validate(length(min = NAME_MIN_LEN, max = NAME_MAX_LEN), custom(function = "validate_firmware_name"))]
@@ -34,6 +39,7 @@ pub struct UpdateProducer {
     pub description: Option<String>,
 }
 
+/// API representation of a producer with its location.
 #[derive(Serialize, Deserialize, Debug, utoipa::ToSchema)]
 pub struct Producer {
     pub id: Uuid,
@@ -51,6 +57,7 @@ pub struct Producer {
 }
 
 impl Producer {
+    /// Constructs a [`Producer`] from a database producer and location pair.
     pub fn from_producer_location(producer: models::Producer, location: models::Location) -> Self {
         let models::Producer {
             id,

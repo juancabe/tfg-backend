@@ -1,3 +1,6 @@
+//! JWT token extractor for axum request handling.
+
+/// Axum extractor that validates JWT tokens from the `Authorization` header.
 pub mod jwt_extractor {
     use axum::{
         extract::FromRequestParts,

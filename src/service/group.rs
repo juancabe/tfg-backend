@@ -1,3 +1,5 @@
+//! Group management service layer.
+
 use crate::dao::DbPool;
 use crate::dao::group::GroupDao;
 use crate::dao::location::LocationDao;
@@ -37,6 +39,7 @@ fn validate_firmware_compatible_name(name: &str, field_name: &str) -> Result<(),
     Ok(())
 }
 
+/// Service for group CRUD operations.
 pub struct GroupService<G: GroupDao, L: LocationDao> {
     group_dao: G,
     location_dao: L,
@@ -56,6 +59,7 @@ where
 }
 
 impl<G: GroupDao + Clone, L: LocationDao + Clone> GroupService<G, L> {
+    /// Creates a new [`GroupService`] with the given DAOs.
     pub fn new(group_dao: G, location_dao: L) -> Self {
         Self {
             group_dao,
@@ -63,6 +67,7 @@ impl<G: GroupDao + Clone, L: LocationDao + Clone> GroupService<G, L> {
         }
     }
 
+    /// Creates a new group with an associated location.
     pub fn create_group(
         &self,
         user_id: Uuid,
@@ -115,6 +120,7 @@ impl<G: GroupDao + Clone, L: LocationDao + Clone> GroupService<G, L> {
         Ok(group.into())
     }
 
+    /// Returns all groups owned by a user.
     pub fn get_groups(&self, user_id: Uuid) -> Result<Vec<Group>, ServiceError> {
         Ok(self
             .group_dao
@@ -124,6 +130,7 @@ impl<G: GroupDao + Clone, L: LocationDao + Clone> GroupService<G, L> {
             .collect())
     }
 
+    /// Deletes a group. Only the owner can delete.
     pub fn delete_group(&self, user_id: Uuid, group_id: Uuid) -> Result<(), ServiceError> {
         let group = self.group_dao.get_group(group_id)?;
         if group.owner_user_id != user_id {
@@ -133,6 +140,7 @@ impl<G: GroupDao + Clone, L: LocationDao + Clone> GroupService<G, L> {
         self.group_dao.delete_group(group_id).map_err(Into::into)
     }
 
+    /// Updates a group's metadata. Only the owner can update.
     pub fn update_group(
         &self,
         user_id: Uuid,

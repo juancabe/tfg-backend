@@ -1,3 +1,5 @@
+//! Test utilities for integration testing, including database setup and factory functions.
+
 use crate::dao::DbPool;
 use crate::helpers::data_templates::{
     RANDOMFLOAT_TEMPLATE_FIELD_ID, RANDOMFLOAT_TEMPLATE_FIELD_JSON_KEY,
@@ -10,16 +12,19 @@ use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use dotenvy::dotenv;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
+/// Embedded database migrations for test setup.
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
 
 static DB_LOCK: Mutex<()> = Mutex::new(());
 static POOL: OnceLock<DbPool> = OnceLock::new();
 
+/// Test context holding a database pool and an exclusive lock.
 pub struct TestContext {
     pub pool: DbPool,
     _lock: MutexGuard<'static, ()>,
 }
 
+/// Returns a shared test database connection pool.
 pub fn get_pool() -> DbPool {
     POOL.get_or_init(|| {
         dotenv().ok();
@@ -34,6 +39,7 @@ pub fn get_pool() -> DbPool {
     .clone()
 }
 
+/// Sets up a test environment: runs migrations, truncates tables, and seeds default templates.
 pub fn setup() -> TestContext {
     let _lock = DB_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let pool = get_pool();
@@ -79,6 +85,7 @@ fn seed_default_templates(conn: &mut PgConnection) {
 }
 
 // Factories
+/// Creates a test user with the given suffix.
 #[allow(dead_code)]
 pub fn create_test_user(pool: &DbPool, suffix: &str) -> User {
     use crate::model::schema::users::dsl::*;
@@ -92,6 +99,7 @@ pub fn create_test_user(pool: &DbPool, suffix: &str) -> User {
         .unwrap()
 }
 
+/// Creates a test location with the given suffix.
 #[allow(dead_code)]
 pub fn create_test_location(pool: &DbPool, suffix: &str) -> crate::model::models::Location {
     use crate::model::schema::locations::dsl::*;
@@ -107,6 +115,7 @@ pub fn create_test_location(pool: &DbPool, suffix: &str) -> crate::model::models
         .unwrap()
 }
 
+/// Creates a test group with the given owner, location, and suffix.
 #[allow(dead_code)]
 pub fn create_test_group(
     pool: &DbPool,
@@ -129,6 +138,7 @@ pub fn create_test_group(
         .unwrap()
 }
 
+/// Creates a test producer with the given group, location, and suffix.
 #[allow(dead_code)]
 pub fn create_test_producer(
     pool: &DbPool,

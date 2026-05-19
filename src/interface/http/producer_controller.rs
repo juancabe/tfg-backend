@@ -1,3 +1,6 @@
+//! Producer management HTTP endpoint handlers.
+#![allow(missing_docs)]
+
 use axum::{
     Json,
     extract::{Path, State},
@@ -20,6 +23,7 @@ use crate::{
     service::{auth::JWT, producer::ProducerService},
 };
 
+/// Response for listing producers grouped by group.
 #[derive(Deserialize, Serialize, Debug, utoipa::ToSchema)]
 pub struct GetProducersResponse {
     pairs: Vec<(Group, Vec<Producer>)>,
@@ -31,6 +35,7 @@ impl From<Vec<(Group, Vec<Producer>)>> for GetProducersResponse {
     }
 }
 
+/// Response for a single producer lookup.
 #[derive(Deserialize, Serialize, Debug, utoipa::ToSchema)]
 pub struct GetProducerResponse {
     producer: Producer,
@@ -42,21 +47,25 @@ impl From<Producer> for GetProducerResponse {
     }
 }
 
+/// Request body for creating a producer.
 #[derive(Deserialize, Serialize, Debug, utoipa::ToSchema)]
 pub struct PostProducerBody {
     producer: NewProducer,
 }
 
+/// Response for a successful producer creation.
 #[derive(Deserialize, Serialize, Debug, utoipa::ToSchema)]
 pub struct PostProducerResponse {
     producer: Producer,
 }
 
+/// Request body for updating a producer.
 #[derive(Deserialize, Serialize, Debug, utoipa::ToSchema)]
 pub struct PatchProducerBody {
     producer: UpdateProducer,
 }
 
+/// Response for a successful producer update.
 #[derive(Deserialize, Serialize, Debug, utoipa::ToSchema)]
 pub struct PatchProducerResponse {
     producer: Producer,

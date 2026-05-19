@@ -1,3 +1,6 @@
+//! Device provisioning HTTP endpoint handlers.
+#![allow(missing_docs)]
+
 use axum::{
     Json,
     extract::{Path, State},

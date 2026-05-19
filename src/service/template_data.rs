@@ -1,3 +1,5 @@
+//! Template data query service layer.
+
 use std::collections::HashSet;
 
 use chrono::{DateTime, Utc};
@@ -14,6 +16,7 @@ use crate::{
 const DEFAULT_LIMIT: u32 = 500;
 const MAX_LIMIT: u32 = 5000;
 
+/// Service for template and data query operations.
 pub struct TemplateDataService<T: TemplateDataDao, P: ProducerDao, G: GroupDao> {
     template_data_dao: T,
     producer_dao: P,
@@ -21,6 +24,7 @@ pub struct TemplateDataService<T: TemplateDataDao, P: ProducerDao, G: GroupDao> 
 }
 
 impl<T: TemplateDataDao, P: ProducerDao, G: GroupDao> TemplateDataService<T, P, G> {
+    /// Creates a new [`TemplateDataService`] with the given DAOs.
     pub fn new(template_data_dao: T, producer_dao: P, group_dao: G) -> Self {
         Self {
             template_data_dao,
@@ -29,6 +33,7 @@ impl<T: TemplateDataDao, P: ProducerDao, G: GroupDao> TemplateDataService<T, P, 
         }
     }
 
+    /// Lists all packet templates available to a user.
     pub fn list_templates(&self, user_id: Uuid) -> Result<Vec<PacketTemplateView>, ServiceError> {
         self.template_data_dao
             .list_templates_with_fields(Some(user_id))
@@ -36,6 +41,7 @@ impl<T: TemplateDataDao, P: ProducerDao, G: GroupDao> TemplateDataService<T, P, 
             .map_err(Into::into)
     }
 
+    /// Retrieves data samples for a producer with optional filtering.
     pub fn get_producer_data(
         &self,
         user_id: Uuid,

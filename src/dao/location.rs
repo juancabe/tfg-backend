@@ -1,26 +1,35 @@
+//! Location DAO operations for CRUD on geographic locations.
+
 use crate::dao::{DaoError, DbPool};
 use crate::model::models::{Location, NewLocation};
 use diesel::prelude::*;
 use diesel::{RunQueryDsl, SelectableHelper};
 use uuid::Uuid;
 
+/// Trait defining location-related database operations.
 pub trait LocationDao {
+    /// Creates a new location.
     fn create_location(&self, new_location: NewLocation) -> Result<Location, DaoError>;
+    /// Creates a new location using an existing database connection.
     fn create_location_with_conn(
         &self,
         conn: &mut diesel::PgConnection,
         new_location: NewLocation,
     ) -> Result<Location, DaoError>;
+    /// Retrieves a location by its ID.
     fn get_location(&self, id: Uuid) -> Result<Location, DaoError>;
+    /// Deletes a location by its ID.
     fn delete_location(&self, id: Uuid) -> Result<(), DaoError>;
 }
 
+/// PostgreSQL implementation of [`LocationDao`].
 #[derive(Clone)]
 pub struct PgLocationDao {
     pool: DbPool,
 }
 
 impl PgLocationDao {
+    /// Creates a new [`PgLocationDao`] with the given connection pool.
     pub fn new(pool: DbPool) -> Self {
         Self { pool }
     }

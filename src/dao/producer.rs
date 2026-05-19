@@ -7,13 +7,18 @@ use chrono::{SubsecRound, Utc};
 use diesel::prelude::*;
 use uuid::Uuid;
 
+/// Represents the type of authentication credentials a producer has.
 #[derive(Debug)]
 pub enum ProducerAuthCredentials {
+    /// X25519-based internet authentication.
     Internet(InternetAuth),
+    /// MQTT broker username/password authentication.
     Mqtt(MqttBrokerAuth),
+    /// No authentication credentials set.
     None,
 }
 
+/// Trait defining producer-related database operations.
 pub trait ProducerDao {
     /// Creates a new producer with the provided parameters.
     fn create_producer(&self, new_producer: NewProducer) -> Result<Producer, DaoError>;
@@ -86,6 +91,7 @@ pub trait ProducerDao {
     ) -> Result<Option<crate::service::provisioning::ForwarderCandidate>, DaoError>;
 }
 
+/// PostgreSQL implementation of [`ProducerDao`].
 #[derive(Clone)]
 pub struct PgProducerDao {
     pool: DbPool,
@@ -98,10 +104,12 @@ impl From<DbPool> for PgProducerDao {
 }
 
 impl PgProducerDao {
+    /// Creates a new [`PgProducerDao`] with the given connection pool.
     pub fn new(pool: DbPool) -> Self {
         Self { pool }
     }
 
+    /// Clones the internal database connection pool.
     pub fn pool_clone(&self) -> DbPool {
         self.pool.clone()
     }

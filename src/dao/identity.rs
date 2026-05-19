@@ -11,6 +11,7 @@ use diesel::prelude::*;
 use diesel::{ExpressionMethods, RunQueryDsl, SelectableHelper};
 use uuid::Uuid;
 
+/// Trait defining user identity and authentication database operations.
 pub trait IdentityDao {
     /// inserts a [`NewUser`] in db `users` table
     fn create_user(&self, new_user: NewUser) -> Result<User, DaoError>;
@@ -92,11 +93,13 @@ pub trait IdentityDao {
     fn verify_token(&self, user_id: &Uuid, version_n: i64) -> Result<bool, DaoError>;
 }
 
+/// PostgreSQL implementation of [`IdentityDao`].
 pub struct PgIdentityDao {
     pool: DbPool,
 }
 
 impl PgIdentityDao {
+    /// Creates a new [`PgIdentityDao`] with the given connection pool.
     pub fn new(pool: DbPool) -> Self {
         Self { pool }
     }

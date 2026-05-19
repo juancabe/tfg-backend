@@ -1,27 +1,41 @@
+//! Group DAO operations for CRUD and favorite management.
+
 use crate::dao::{DaoError, DbPool};
 use crate::model::models::{Group, GroupUpdate, NewFavoriteGroup, NewGroup};
 use diesel::prelude::*;
 use diesel::{ExpressionMethods, RunQueryDsl, SelectableHelper};
 use uuid::Uuid;
 
-// Helper Enum for Permissions
+/// Represents a user's permission level within a group.
 #[derive(Debug, PartialEq)]
 pub enum GroupRole {
+    /// Full ownership of the group.
     Owner,
+    /// Can collaborate and edit.
     Collaborator,
+    /// Read-only access.
     Viewer,
+    /// No access.
     None,
 }
 
+/// Trait defining group-related database operations.
 pub trait GroupDao {
+    /// Creates a new group.
     fn create_group(&self, new_group: NewGroup) -> Result<Group, DaoError>;
+    /// Retrieves a group by its ID.
     fn get_group(&self, group_id: Uuid) -> Result<Group, DaoError>;
+    /// Updates an existing group.
     fn update_group(&self, group_id: Uuid, update: GroupUpdate) -> Result<Group, DaoError>;
+    /// Deletes a group by its ID.
     fn delete_group(&self, group_id: Uuid) -> Result<(), DaoError>;
+    /// Returns all groups owned by a user.
     fn get_user_groups(&self, user_id: Uuid) -> Result<Vec<Group>, DaoError>;
+    /// Toggles a group as favorite for a user. Returns whether it was added.
     fn toggle_favorite_group(&self, user_id_in: Uuid, group_id_in: Uuid) -> Result<bool, DaoError>;
 }
 
+/// PostgreSQL implementation of [`GroupDao`].
 #[derive(Clone)]
 pub struct PgGroupDao {
     pool: DbPool,
@@ -34,6 +48,7 @@ impl From<DbPool> for PgGroupDao {
 }
 
 impl PgGroupDao {
+    /// Creates a new [`PgGroupDao`] with the given connection pool.
     pub fn new(pool: DbPool) -> Self {
         Self { pool }
     }

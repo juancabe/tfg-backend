@@ -1,15 +1,20 @@
+//! Location-related API type definitions.
+#![allow(missing_docs)]
+
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use validator::Validate;
 
 use crate::{interface::types::TypeError, model::models};
 
+/// Location-related errors.
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("Only provided one component of geo location")]
     InvalidPartialLocation,
 }
 
+/// API representation of a location.
 #[derive(Serialize, Deserialize, Debug, utoipa::ToSchema)]
 pub struct Location {
     pub name: Option<String>,
@@ -17,6 +22,7 @@ pub struct Location {
     pub geo_long: Option<f64>,
 }
 
+/// Request body for creating a new location.
 #[derive(Deserialize, Serialize, Debug, utoipa::ToSchema, Validate)]
 pub struct NewLocation {
     pub name: Option<String>,

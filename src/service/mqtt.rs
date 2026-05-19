@@ -1,3 +1,5 @@
+//! MQTT authentication, authorization, and data ingestion services.
+
 use openssl::base64;
 use uuid::Uuid;
 
@@ -37,15 +39,21 @@ pub struct ProducerIdentity {
     pub allowed_subscribe_topic: String,
 }
 
+/// Target information for a publish authorization.
 #[derive(Debug, Clone)]
 pub struct PublishTarget {
+    /// The producer that owns this target.
     pub producer_id: Uuid,
+    /// The data template ID extracted from the topic, if present.
     pub template_id: Option<Uuid>,
 }
 
+/// The type of publish authorization granted.
 #[derive(Debug, Clone)]
 pub enum PublishAuthorization {
+    /// Direct publish to the producer's own topic.
     Direct(PublishTarget),
+    /// Delegated publish through a forwarder.
     Delegated(PublishTarget),
 }
 
@@ -56,6 +64,7 @@ pub struct MqttAuthService<M: MqttDao = PgMqttDao> {
 }
 
 impl<M: MqttDao> MqttAuthService<M> {
+    /// Creates a new [`MqttAuthService`] with the given DAO.
     pub fn new(mqtt_dao: M) -> Self {
         Self { mqtt_dao }
     }
@@ -92,10 +101,12 @@ impl<M: MqttDao> MqttAuthService<M> {
         })
     }
 
+    /// Checks if a topic filter matches the identity's allowed subscribe topic.
     pub fn authorize_subscribe(identity: &ProducerIdentity, topic_filter: &str) -> bool {
         identity.allowed_subscribe_topic == topic_filter
     }
 
+    /// Authorizes a publish to a topic, checking both direct and delegated access.
     pub fn authorize_publish(
         &self,
         identity: &ProducerIdentity,
@@ -171,6 +182,7 @@ pub struct MqttIngestService<M: MqttDao = PgMqttDao, P: ProducerDao = PgProducer
 }
 
 impl<M: MqttDao + Clone, P: ProducerDao + Clone> MqttIngestService<M, P> {
+    /// Creates a new [`MqttIngestService`].
     pub fn new(mqtt_dao: M, producer_dao: P, auth: MqttAuthService<M>) -> Self {
         Self {
             mqtt_dao,
@@ -179,6 +191,7 @@ impl<M: MqttDao + Clone, P: ProducerDao + Clone> MqttIngestService<M, P> {
         }
     }
 
+    /// Delegates publish authorization to the inner auth service.
     pub fn authorize_publish(
         &self,
         identity: &ProducerIdentity,
@@ -187,6 +200,7 @@ impl<M: MqttDao + Clone, P: ProducerDao + Clone> MqttIngestService<M, P> {
         self.auth.authorize_publish(identity, topic)
     }
 
+    /// Persists a payload to the database and updates the producer's last_seen.
     pub fn persist_payload(
         &self,
         target: &PublishTarget,
@@ -244,10 +258,12 @@ pub struct MqttForwarderPeersService<M: MqttDao = PgMqttDao> {
 }
 
 impl<M: MqttDao> MqttForwarderPeersService<M> {
+    /// Creates a new [`MqttForwarderPeersService`].
     pub fn new(mqtt_dao: M) -> Self {
         Self { mqtt_dao }
     }
 
+    /// Loads and decodes x25519 public keys for a forwarder's peer producers.
     pub fn load_forwarder_peers(&self, forwarder_id: Uuid) -> Result<Vec<[u8; 32]>, ServiceError> {
         let rows = self.mqtt_dao.list_forwarder_peer_keys(forwarder_id)?;
 

@@ -1,3 +1,6 @@
+//! Group management HTTP endpoint handlers.
+#![allow(missing_docs)]
+
 use axum::{
     Json,
     extract::{Path, State},
@@ -17,31 +20,37 @@ use crate::{
     service::{auth::JWT, group::GroupService},
 };
 
+/// Response for listing groups.
 #[derive(Debug, Deserialize, Serialize, utoipa::ToSchema)]
 pub struct GetGroupsResponse {
     pub groups: Vec<Group>,
 }
 
+/// Response for a single group lookup.
 #[derive(Debug, Deserialize, Serialize, utoipa::ToSchema)]
 pub struct GetGroupResponse {
     pub group: Group,
 }
 
+/// Request body for creating a group.
 #[derive(Debug, Deserialize, Serialize, utoipa::ToSchema)]
 pub struct PostGroupBody {
     pub group: NewGroup,
 }
 
+/// Response for a successful group creation.
 #[derive(Debug, Deserialize, Serialize, utoipa::ToSchema)]
 pub struct PostGroupResponse {
     pub group: Group,
 }
 
+/// Request body for updating a group.
 #[derive(Debug, Deserialize, Serialize, utoipa::ToSchema)]
 pub struct PatchGroupBody {
     pub group: UpdateGroup,
 }
 
+/// Response for a successful group update.
 #[derive(Debug, Deserialize, Serialize, utoipa::ToSchema)]
 pub struct PatchGroupResponse {
     pub group: Group,

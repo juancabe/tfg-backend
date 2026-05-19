@@ -1,3 +1,5 @@
+//! Template and data query DAO operations.
+
 use crate::dao::{DaoError, DbPool};
 use crate::model::models::{Data, PacketTemplate, TemplateField};
 use chrono::{DateTime, Utc};
@@ -5,32 +7,42 @@ use diesel::prelude::*;
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper};
 use uuid::Uuid;
 
+/// Filter parameters for querying producer data.
 #[derive(Debug, Clone)]
 pub struct DataQueryFilter {
+    /// Optional template ID to filter by.
     pub template_id: Option<Uuid>,
+    /// Optional start time for the data range.
     pub from: Option<DateTime<Utc>>,
+    /// Optional end time for the data range.
     pub to: Option<DateTime<Utc>>,
+    /// Maximum number of records to return.
     pub limit: i64,
 }
 
+/// Trait defining template and data query database operations.
 pub trait TemplateDataDao {
+    /// Lists all packet templates with their fields, optionally filtered by creator.
     fn list_templates_with_fields(
         &self,
         creator_user_id_filter: Option<Uuid>,
     ) -> Result<Vec<(PacketTemplate, Vec<TemplateField>)>, DaoError>;
 
+    /// Lists data records for a producer, applying the given filter.
     fn list_data_for_producer(
         &self,
         producer_id_in: Uuid,
         filter: DataQueryFilter,
     ) -> Result<Vec<Data>, DaoError>;
 
+    /// Lists packet templates by their IDs along with their fields.
     fn list_templates_by_ids_with_fields(
         &self,
         template_ids: &[Uuid],
     ) -> Result<Vec<(PacketTemplate, Vec<TemplateField>)>, DaoError>;
 }
 
+/// PostgreSQL implementation of [`TemplateDataDao`].
 #[derive(Clone)]
 pub struct PgTemplateDataDao {
     pool: DbPool,
@@ -43,6 +55,7 @@ impl From<DbPool> for PgTemplateDataDao {
 }
 
 impl PgTemplateDataDao {
+    /// Creates a new [`PgTemplateDataDao`] with the given connection pool.
     pub fn new(pool: DbPool) -> Self {
         Self { pool }
     }

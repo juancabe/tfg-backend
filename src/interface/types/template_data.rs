@@ -1,3 +1,6 @@
+//! Template data-related API type definitions.
+#![allow(missing_docs)]
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -5,6 +8,7 @@ use uuid::Uuid;
 
 use crate::model::models;
 
+/// API view of a template field.
 #[derive(Serialize, Deserialize, Debug, Clone, utoipa::ToSchema)]
 pub struct TemplateFieldView {
     pub id: Uuid,
@@ -18,6 +22,7 @@ pub struct TemplateFieldView {
     pub unit_enum_other_payload: Option<String>,
 }
 
+/// API view of a packet template with its fields.
 #[derive(Serialize, Deserialize, Debug, Clone, utoipa::ToSchema)]
 pub struct PacketTemplateView {
     pub id: Uuid,
@@ -26,6 +31,7 @@ pub struct PacketTemplateView {
     pub fields: Vec<TemplateFieldView>,
 }
 
+/// API view of a single data sample from a producer.
 #[derive(Serialize, Deserialize, Debug, Clone, utoipa::ToSchema)]
 pub struct DataSampleView {
     pub id: Uuid,
@@ -36,6 +42,7 @@ pub struct DataSampleView {
     pub payload: JsonValue,
 }
 
+/// Query parameters for fetching producer data.
 #[derive(Serialize, Deserialize, Debug, Clone, utoipa::ToSchema)]
 pub struct ProducerDataQuery {
     pub template_id: Option<Uuid>,
@@ -44,6 +51,7 @@ pub struct ProducerDataQuery {
     pub limit: Option<u32>,
 }
 
+/// Response containing producer data samples and their templates.
 #[derive(Serialize, Deserialize, Debug, Clone, utoipa::ToSchema)]
 pub struct ProducerDataView {
     pub producer_id: Uuid,

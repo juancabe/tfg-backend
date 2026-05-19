@@ -1,3 +1,6 @@
+//! Group-related API type definitions.
+#![allow(missing_docs)]
+
 use crate::helpers::validation::{
     DESCRIPTION_MAX_LEN, NAME_MAX_LEN, NAME_MIN_LEN, validate_firmware_name,
 };
@@ -7,6 +10,7 @@ use validator::Validate;
 
 use crate::{interface::types::location::NewLocation, model::models};
 
+/// API representation of a group.
 #[derive(Serialize, Deserialize, Debug, utoipa::ToSchema)]
 pub struct Group {
     pub id: Uuid,
@@ -38,6 +42,7 @@ impl From<models::Group> for Group {
     }
 }
 
+/// Request body for creating a new group.
 #[derive(Serialize, Deserialize, Debug, utoipa::ToSchema, Validate)]
 pub struct NewGroup {
     pub location: NewLocation,
@@ -48,6 +53,7 @@ pub struct NewGroup {
     pub is_public: bool,
 }
 
+/// Request body for updating an existing group.
 #[derive(Serialize, Deserialize, Debug, utoipa::ToSchema, Validate)]
 pub struct UpdateGroup {
     #[validate(length(min = NAME_MIN_LEN, max = NAME_MAX_LEN), custom(function = "validate_firmware_name"))]

@@ -1,3 +1,5 @@
+//! Pending producer registration DAO operations.
+
 use chrono::{DateTime, Utc};
 use diesel::prelude::*;
 use uuid::Uuid;
@@ -10,19 +12,24 @@ use crate::{
     },
 };
 
+/// Trait defining pending producer registration database operations.
 pub trait PendingRegistrationDao {
+    /// Creates a new pending registration entry.
     fn create(
         &self,
         new_pending: NewPendingProducerRegistration,
     ) -> Result<PendingProducerRegistration, DaoError>;
 
+    /// Retrieves a pending registration by its ID.
     fn get_by_id(&self, id: Uuid) -> Result<Option<PendingProducerRegistration>, DaoError>;
 
+    /// Returns all pending registrations for a given owner.
     fn get_pending_for_owner(
         &self,
         owner_user_id_in: Uuid,
     ) -> Result<Vec<PendingProducerRegistration>, DaoError>;
 
+    /// Marks a pending registration as confirmed and links it to a producer.
     fn mark_confirmed(
         &self,
         id: Uuid,
@@ -31,13 +38,16 @@ pub trait PendingRegistrationDao {
         lora_addr: Option<i32>,
     ) -> Result<PendingProducerRegistration, DaoError>;
 
+    /// Marks a pending registration as cancelled.
     fn mark_cancelled(&self, id: Uuid) -> Result<PendingProducerRegistration, DaoError>;
 
+    /// Marks all pending registrations that expired before the given time as expired.
     fn mark_expired_before(
         &self,
         now: DateTime<Utc>,
     ) -> Result<Vec<PendingProducerRegistration>, DaoError>;
 
+    /// Marks a pending registration as confirmed using an existing connection.
     fn mark_confirmed_with_conn(
         &self,
         conn: &mut diesel::PgConnection,
@@ -48,12 +58,14 @@ pub trait PendingRegistrationDao {
     ) -> Result<PendingProducerRegistration, DaoError>;
 }
 
+/// PostgreSQL implementation of [`PendingRegistrationDao`].
 #[derive(Clone)]
 pub struct PgPendingRegistrationDao {
     pool: DbPool,
 }
 
 impl PgPendingRegistrationDao {
+    /// Creates a new [`PgPendingRegistrationDao`] with the given connection pool.
     pub fn new(pool: DbPool) -> Self {
         Self { pool }
     }

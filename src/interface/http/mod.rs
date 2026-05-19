@@ -57,27 +57,40 @@ async fn log_middleware(
     resp
 }
 
+/// Errors that can occur during HTTP server initialization.
 #[derive(Debug, Error)]
 pub enum HttpError {
+    /// A server initialization error occurred.
     #[error("Initialization error occurred")]
     InitError(String),
+    /// A Tokio IO error occurred.
     #[error("Tokio IO error")]
     TokioIOError(#[from] io::Error),
+    /// A database pool creation error occurred.
     #[error("DbPool creation error")]
     DbPoolError(#[from] r2d2::Error),
 }
 
+/// Authentication endpoint handlers.
 pub mod auth_controller;
+/// OpenAPI/Swagger documentation generation.
 pub mod docs;
+/// JWT token extractor for axum.
 pub mod extractor;
+/// Group management endpoint handlers.
 pub mod group_controller;
+/// Producer management endpoint handlers.
 pub mod producer_controller;
+/// Device provisioning endpoint handlers.
 pub mod provisioning_controller;
+/// Template data endpoint handlers.
 pub mod template_data_controller;
 
+/// HTTP server entry point.
 pub struct Http {}
 
 impl Http {
+    /// Starts the HTTP server on the given address with the provided database pool and MQTT peer channel.
     pub async fn run_http_server(
         addr: SocketAddr,
         pool: DbPool,
@@ -163,10 +176,13 @@ impl Http {
     }
 }
 
+/// Errors that can occur during HTTP request handling.
 #[derive(Debug, Error)]
 pub enum HttpApiError {
+    /// The JSON payload was rejected.
     #[error("JSON payload rejected")]
     JsonRejection(#[from] JsonRejection),
+    /// A service-layer error occurred.
     #[error("Service error: {0}")]
     ServiceError(#[from] ServiceError),
 }

@@ -1,3 +1,5 @@
+//! OpenAPI/Swagger documentation generation for the HTTP API.
+
 use utoipa::{
     Modify, OpenApi,
     openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme},
@@ -23,6 +25,7 @@ use crate::interface::types::{
     },
 };
 
+/// Adds JWT Bearer authentication scheme to the OpenAPI spec.
 pub struct SecurityAddon;
 
 impl Modify for SecurityAddon {
@@ -136,4 +139,5 @@ impl Modify for SecurityAddon {
         (name = "templates", description = "Packet templates and producer data endpoints")
     )
 )]
+/// Root OpenAPI specification for the API, including all routes, schemas, and security.
 pub struct ApiDoc;

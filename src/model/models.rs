@@ -1,3 +1,6 @@
+//! Diesel model structs representing database entities.
+#![allow(missing_docs)]
+
 use chrono::{DateTime, Utc};
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -10,62 +13,89 @@ use super::schema::*;
 //  ENUMS (Application Logic)
 // =========================================================================
 
+/// Authentication method kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(i16)]
 pub enum AuthKind {
+    /// Email and password authentication.
     EmailPass = 1,
+    /// OAuth-based authentication.
     OAuth = 2,
 }
 
+/// Status of a command sent to a producer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(i16)]
-// TODO: Real one, this one is a template
 pub enum CommandStatus {
+    /// Command has been sent.
     Sent = 1,
+    /// Command was received by the producer.
     Received = 2,
+    /// Command executed successfully.
     ExecSuccess = 3,
+    /// Command execution failed.
     ExecFailure = 4,
 }
 
+/// Type of command that can be sent to a producer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(i16)]
-// TODO: Real one, this one is a template
 pub enum CommandKind {
+    /// Reboot the producer.
     Reboot = 1,
+    /// Update the producer's firmware.
     UpdateFirmware = 2,
+    /// Set WiFi credentials on the producer.
     SetWifi = 3,
 }
 
+/// Data representation type for a template field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(i16)]
-// TODO: Real one, this one is a template, a thought one tho
 pub enum FieldRepr {
+    /// Floating-point number.
     Float = 1,
+    /// Signed integer.
     Integer = 2,
+    /// Unsigned integer.
     UnsignedInteger = 3,
+    /// String value.
     String = 4,
+    /// JSON object.
     Json = 5,
+    /// Boolean value.
     Bool = 6,
 }
 
+/// Unit of measurement for a template field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(i16)]
-// TODO: Real one, this one is a template, a thought one tho
 pub enum FieldUnit {
+    /// Temperature in Celsius.
     TempCelsius = 1,
+    /// Relative humidity percentage.
     HumidityPerc = 2,
+    /// Voltage.
     Volts = 3,
+    /// Unix epoch timestamp.
     UnixEpoch = 4,
+    /// No unit.
     None = 5,
-    Other = 6, // Uses the separate string payload column
+    /// Custom unit (uses a separate string payload column).
+    Other = 6,
 }
 
+/// Status of a pending producer registration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(i16)]
 pub enum PendingProducerRegistrationStatus {
+    /// Registration is pending confirmation.
     Pending = 1,
+    /// Registration has been confirmed.
     Confirmed = 2,
+    /// Registration has expired.
     Expired = 3,
+    /// Registration was cancelled.
     Cancelled = 4,
 }
 
@@ -73,6 +103,7 @@ pub enum PendingProducerRegistrationStatus {
 //  USERS & AUTH
 // =========================================================================
 
+/// Database entity for a user account.
 #[derive(Debug, Queryable, Selectable, Identifiable, Serialize, Deserialize)]
 #[diesel(table_name = users)]
 pub struct User {
@@ -83,12 +114,14 @@ pub struct User {
     pub refreshed_token_at: DateTime<Utc>,
 }
 
+/// Insertable struct for creating a new user.
 #[derive(Debug, Insertable, Clone)]
 #[diesel(table_name = users)]
 pub struct NewUser<'a> {
     pub login: &'a str,
 }
 
+/// Database entity for an email-based authentication method linked to a user.
 #[derive(Debug, Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize)]
 #[diesel(belongs_to(User))]
 #[diesel(table_name = email_auth_methods)]
@@ -103,6 +136,7 @@ pub struct EmailAuthMethod {
     pub changed_pass_at: DateTime<Utc>,
 }
 
+/// Insertable struct for creating a new email authentication method.
 #[derive(Debug, Insertable)]
 #[diesel(table_name = email_auth_methods)]
 pub struct NewEmailAuthMethod<'a> {
@@ -111,6 +145,7 @@ pub struct NewEmailAuthMethod<'a> {
     pub hashed_pass: &'a str,
 }
 
+/// Database entity for an email verification token.
 #[derive(Debug, Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize)]
 #[diesel(belongs_to(User))]
 #[diesel(table_name = email_verifications)]
@@ -123,6 +158,7 @@ pub struct EmailVerification {
     pub consumed_at: Option<DateTime<Utc>>,
 }
 
+/// Insertable struct for creating a new email verification token.
 #[derive(Debug, Insertable)]
 #[diesel(table_name = email_verifications)]
 pub struct NewEmailVerification<'a> {
@@ -131,6 +167,7 @@ pub struct NewEmailVerification<'a> {
     pub expires_at: DateTime<Utc>,
 }
 
+/// Database entity for a password reset request.
 #[derive(Debug, Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize)]
 #[diesel(belongs_to(User))]
 #[diesel(table_name = password_resets)]
@@ -147,6 +184,7 @@ pub struct PasswordReset {
     pub consumed_at: Option<DateTime<Utc>>,
 }
 
+/// Insertable struct for creating a new password reset request.
 #[derive(Debug, Insertable)]
 #[diesel(table_name = password_resets)]
 pub struct NewPasswordReset<'a> {
@@ -156,6 +194,7 @@ pub struct NewPasswordReset<'a> {
     pub expires_at: DateTime<Utc>,
 }
 
+/// Database entity for a refresh token used in JWT rotation.
 #[derive(Debug, Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize)]
 #[diesel(belongs_to(User))]
 #[diesel(table_name = refresh_tokens)]
@@ -167,6 +206,7 @@ pub struct RefreshToken {
     pub version_n: i64,
 }
 
+/// Insertable struct for creating a new refresh token.
 #[derive(Debug, Insertable, Clone, Copy)]
 #[diesel(table_name = refresh_tokens)]
 pub struct NewRefreshToken {
@@ -180,6 +220,7 @@ pub struct NewRefreshToken {
 //  LOCATIONS
 // =========================================================================
 
+/// Database entity for a physical or logical location.
 #[derive(Debug, Queryable, Selectable, Identifiable, Serialize, Deserialize)]
 #[diesel(table_name = locations)]
 pub struct Location {
@@ -189,6 +230,7 @@ pub struct Location {
     pub geo_long: Option<f64>,
 }
 
+/// Insertable struct for creating a new location.
 #[derive(Debug, Insertable, Serialize, Deserialize)]
 #[diesel(table_name = locations)]
 pub struct NewLocation {
@@ -201,6 +243,7 @@ pub struct NewLocation {
 //  GROUPS
 // =========================================================================
 
+/// Database entity for a group of producers owned by a user.
 #[derive(
     Debug,
     Queryable,
@@ -226,6 +269,7 @@ pub struct Group {
     pub is_public: bool,
 }
 
+/// Insertable struct for creating a new group.
 #[derive(Debug, Insertable)]
 #[diesel(table_name = groups)]
 pub struct NewGroup {
@@ -236,6 +280,7 @@ pub struct NewGroup {
     pub is_public: bool,
 }
 
+/// Updateable fields for a group.
 #[derive(Debug, AsChangeset)]
 #[diesel(table_name = groups)]
 pub struct GroupUpdate {
@@ -245,6 +290,7 @@ pub struct GroupUpdate {
     pub is_public: bool,
 }
 
+/// Insertable struct for creating a new favorite group association.
 #[derive(Debug, Insertable, Serialize, Deserialize)]
 #[diesel(table_name = favorite_groups)]
 pub struct NewFavoriteGroup {
@@ -256,6 +302,7 @@ pub struct NewFavoriteGroup {
 //  PRODUCERS
 // =========================================================================
 
+/// Database entity for a producer device.
 #[derive(
     Debug,
     Queryable,
@@ -286,6 +333,7 @@ pub struct Producer {
     pub forward_lora: bool,
 }
 
+/// Insertable struct for creating a new producer.
 #[derive(Debug, Insertable)]
 #[diesel(table_name = producers)]
 pub struct NewProducer {
@@ -299,6 +347,7 @@ pub struct NewProducer {
     pub forward_lora: bool,
 }
 
+/// Updateable fields for a producer.
 #[derive(Debug, AsChangeset)]
 #[diesel(table_name = producers)]
 pub struct ProducerUpdate {
@@ -310,6 +359,7 @@ pub struct ProducerUpdate {
     pub forward_lora: Option<bool>,
 }
 
+/// Database entity for internet authentication credentials of a producer.
 #[derive(Debug, Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize)]
 #[diesel(belongs_to(Producer))]
 #[diesel(primary_key(producer_id))]
@@ -319,6 +369,7 @@ pub struct InternetAuth {
     pub x25519_pub_key_bytes_base64: String,
 }
 
+/// Insertable struct for creating new internet authentication credentials.
 #[derive(Debug, Insertable, AsChangeset)]
 #[diesel(table_name = internet_auths)]
 pub struct NewInternetAuth {
@@ -326,6 +377,7 @@ pub struct NewInternetAuth {
     pub x25519_pub_key_bytes_base64: String,
 }
 
+/// Database entity for MQTT broker authentication credentials of a producer.
 #[derive(Debug, Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize)]
 #[diesel(belongs_to(Producer))]
 #[diesel(primary_key(producer_id))]
@@ -340,6 +392,7 @@ pub struct MqttBrokerAuth {
     pub subscribe_topic: String,
 }
 
+/// Insertable struct for creating new MQTT broker authentication credentials.
 #[derive(Debug, Insertable, AsChangeset)]
 #[diesel(table_name = mqtt_broker_auths)]
 pub struct NewMqttBrokerAuth {
@@ -352,6 +405,7 @@ pub struct NewMqttBrokerAuth {
     pub subscribe_topic: String,
 }
 
+/// Database entity for a pending producer registration request.
 #[derive(Debug, Queryable, Selectable, Identifiable, Serialize, Deserialize)]
 #[diesel(table_name = pending_producer_registrations)]
 pub struct PendingProducerRegistration {
@@ -383,6 +437,7 @@ pub struct PendingProducerRegistration {
     pub lora_addr: Option<i32>,
 }
 
+/// Insertable struct for creating a new pending producer registration.
 #[derive(Debug, Insertable)]
 #[diesel(table_name = pending_producer_registrations)]
 pub struct NewPendingProducerRegistration {
@@ -412,6 +467,7 @@ pub struct NewPendingProducerRegistration {
     pub lora_addr: Option<i32>,
 }
 
+/// Updateable fields for a pending producer registration.
 #[derive(Debug, AsChangeset)]
 #[diesel(table_name = pending_producer_registrations)]
 pub struct PendingProducerRegistrationUpdate {
@@ -423,6 +479,7 @@ pub struct PendingProducerRegistrationUpdate {
     pub lora_addr: Option<i32>,
 }
 
+/// Insertable struct for creating a new favorite producer association.
 #[derive(Debug, Insertable, Serialize, Deserialize)]
 #[diesel(table_name = favorite_producers)]
 pub struct NewFavoriteProducer {
@@ -434,6 +491,7 @@ pub struct NewFavoriteProducer {
 //  COMMANDS
 // =========================================================================
 
+/// Database entity for a command sent to a producer.
 #[derive(Debug, Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize)]
 #[diesel(belongs_to(Producer, foreign_key = target_producer_id))]
 #[diesel(table_name = commands)]
@@ -446,6 +504,7 @@ pub struct Command {
     pub payload: JsonValue,
 }
 
+/// Insertable struct for creating a new command.
 #[derive(Debug, Insertable)]
 #[diesel(table_name = commands)]
 pub struct NewCommand {
@@ -459,6 +518,7 @@ pub struct NewCommand {
 //  TEMPLATES & DATA
 // =========================================================================
 
+/// Database entity for a data packet template.
 #[derive(Debug, Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize)]
 #[diesel(belongs_to(User, foreign_key = creator_user_id))]
 #[diesel(table_name = packet_templates)]
@@ -468,6 +528,7 @@ pub struct PacketTemplate {
     pub name: String,
 }
 
+/// Insertable struct for creating a new packet template.
 #[derive(Debug, Insertable)]
 #[diesel(table_name = packet_templates)]
 pub struct NewPacketTemplate {
@@ -475,6 +536,7 @@ pub struct NewPacketTemplate {
     pub name: String,
 }
 
+/// Database entity for a field definition within a packet template.
 #[derive(Debug, Queryable, Selectable, Identifiable, Serialize, Deserialize, Clone)]
 #[diesel(table_name = template_fields)]
 pub struct TemplateField {
@@ -487,6 +549,7 @@ pub struct TemplateField {
     pub unit_enum_other_payload: Option<String>,
 }
 
+/// Insertable struct for creating a new template field.
 #[derive(Debug, Insertable)]
 #[diesel(table_name = template_fields)]
 pub struct NewTemplateField {
@@ -498,6 +561,7 @@ pub struct NewTemplateField {
     pub unit_enum_other_payload: Option<String>,
 }
 
+/// Database entity for telemetry data received from a producer.
 #[derive(Debug, Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize)]
 #[diesel(belongs_to(Producer))]
 #[diesel(belongs_to(PacketTemplate, foreign_key = template_id))]
@@ -510,6 +574,7 @@ pub struct Data {
     pub payload: JsonValue,
 }
 
+/// Insertable struct for creating a new data record.
 #[derive(Debug, Insertable)]
 #[diesel(table_name = data)]
 pub struct NewData {

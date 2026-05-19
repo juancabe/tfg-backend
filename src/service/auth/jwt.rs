@@ -1,3 +1,5 @@
+//! JWT token creation, encoding, and decoding.
+
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
@@ -7,8 +9,11 @@ use jsonwebtoken::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+/// The type of JWT token.
 pub enum JWTKind {
+    /// Long-lived token used to obtain new session tokens.
     Refresh,
+    /// Short-lived token used for API authentication.
     Session,
 }
 
@@ -20,25 +25,33 @@ impl JWTKind {
         }
     }
 
+    /// Returns the issued-at and expiration timestamps for this token kind.
     pub fn get_iat_exp(&self) -> (DateTime<Utc>, DateTime<Utc>) {
         let iat = chrono::Utc::now();
         let exp = iat + self.exp_offset_secs();
         (iat, exp)
     }
 
+    /// Returns true if this kind is a refresh token.
     pub fn is_refresh(&self) -> bool {
         matches!(self, Self::Refresh)
     }
 }
 
+/// A JWT token with custom claims.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct JWT {
-    // claims
+    /// Token version number for rotation tracking.
     pub version_n: i64,
+    /// The user's login name.
     pub login: String,
+    /// The user's database ID.
     pub user_id: Uuid,
+    /// Issued-at timestamp (Unix seconds).
     pub iat: i64,
+    /// Expiration timestamp (Unix seconds).
     pub exp: i64,
+    /// Whether this is a refresh token.
     pub is_refresh: bool,
 }
 
@@ -50,14 +63,17 @@ lazy_static::lazy_static! {
 impl JWT {
     const ALGORITHM: Algorithm = Algorithm::HS256;
 
+    /// Returns the static decoding key.
     pub fn get_dec_key() -> &'static DecodingKey {
         &dec
     }
 
+    /// Returns the static encoding key.
     pub fn get_enc_key() -> &'static EncodingKey {
         &enc
     }
 
+    /// Creates a new [`JWT`] with the given claims.
     pub fn new(
         version_n: i64,
         login: String,
@@ -76,10 +92,12 @@ impl JWT {
         }
     }
 
+    /// Encodes the JWT claims into a signed token string.
     pub fn encode(&self, key: &EncodingKey) -> Result<String, jsonwebtoken::errors::Error> {
         encode(&Header::new(Self::ALGORITHM), &self, key)
     }
 
+    /// Decodes and validates a JWT token string.
     pub fn decode(
         token: impl AsRef<[u8]>,
         key: &DecodingKey,

@@ -1,3 +1,6 @@
+//! Template data HTTP endpoint handlers.
+#![allow(missing_docs)]
+
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -15,11 +18,13 @@ use crate::{
     service::{auth::JWT, template_data::TemplateDataService},
 };
 
+/// Response for listing packet templates.
 #[derive(Serialize, Deserialize, Debug, utoipa::ToSchema)]
 pub struct GetTemplatesResponse {
     pub templates: Vec<PacketTemplateView>,
 }
 
+/// Response for producer data samples.
 #[derive(Serialize, Deserialize, Debug, utoipa::ToSchema)]
 pub struct GetProducerDataResponse {
     pub data: ProducerDataView,

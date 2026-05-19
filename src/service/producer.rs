@@ -1,3 +1,5 @@
+//! Producer management service layer.
+
 use crate::dao::DbPool;
 use crate::dao::group::GroupDao;
 use crate::dao::location::LocationDao;
@@ -35,6 +37,7 @@ fn validate_firmware_compatible_name(name: &str, field_name: &str) -> Result<(),
     Ok(())
 }
 
+/// Service for producer CRUD operations.
 pub struct ProducerService<P: ProducerDao, L: LocationDao, G: GroupDao> {
     producer_dao: P,
     location_dao: L,
@@ -58,6 +61,7 @@ where
 }
 
 impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> ProducerService<P, L, G> {
+    /// Creates a new [`ProducerService`] with the given DAOs.
     pub fn new(producer_dao: P, location_dao: L, group_dao: G) -> Self {
         Self {
             producer_dao,
@@ -66,6 +70,7 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> Produc
         }
     }
 
+    /// Creates a new producer with an associated location.
     pub fn create_producer(
         &self,
         user_id: Uuid,
@@ -133,6 +138,7 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> Produc
         }
     }
 
+    /// Returns all producers owned by a user, grouped by group.
     pub fn get_owned_producers(
         &self,
         user_id: Uuid,
@@ -159,6 +165,7 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> Produc
             .collect()
     }
 
+    /// Deletes a producer. Only the group owner can delete.
     pub fn delete_producer(&self, user_id: Uuid, producer_id: Uuid) -> Result<(), ServiceError> {
         let producer = self
             .producer_dao
@@ -173,6 +180,7 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> Produc
         Ok(())
     }
 
+    /// Updates a producer's metadata. Only the group owner can update.
     pub fn update_producer(
         &self,
         user_id: Uuid,
@@ -222,6 +230,7 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> Produc
         Ok(crate::interface::types::producer::Producer::from_producer_location(producer, location))
     }
 
+    /// Rotates the authentication credentials for a producer.
     pub fn rotate_credentials(
         &self,
         _user_id: Uuid,

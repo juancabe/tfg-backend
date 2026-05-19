@@ -1,3 +1,6 @@
+//! Provisioning-related API type definitions.
+#![allow(missing_docs)]
+
 use crate::helpers::validation::{
     DESCRIPTION_MAX_LEN, NAME_MAX_LEN, NAME_MIN_LEN, validate_firmware_name,
 };
@@ -8,6 +11,7 @@ use validator::Validate;
 
 use super::location::NewLocation;
 
+/// Request body for creating a pending producer provisioning.
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema, Validate)]
 pub struct CreatePendingProvisioningRequest {
     pub group_id: Uuid,
@@ -23,6 +27,7 @@ pub struct CreatePendingProvisioningRequest {
     pub data_template_id: Option<Uuid>,
 }
 
+/// View of an available forwarder producer.
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct AvailableForwarderView {
     pub id: Uuid,
@@ -33,11 +38,13 @@ pub struct AvailableForwarderView {
     pub x25519_pub_key_bytes_base64: String,
 }
 
+/// Response listing available forwarders.
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct ListAvailableForwardersResponse {
     pub forwarders: Vec<AvailableForwarderView>,
 }
 
+/// WiFi provisioning bundle containing MQTT credentials for a device.
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct ProvisioningWifiBundle {
     pub broker_host: String,
@@ -48,6 +55,7 @@ pub struct ProvisioningWifiBundle {
     pub subscribe_topic: String,
 }
 
+/// View of a pending provisioning registration.
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct PendingProvisioningView {
     pub id: Uuid,
@@ -63,12 +71,14 @@ pub struct PendingProvisioningView {
     pub created_at: DateTime<Utc>,
 }
 
+/// Response for a successfully created pending provisioning.
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct CreatePendingProvisioningResponse {
     pub pending: PendingProvisioningView,
     pub wifi_bundle: ProvisioningWifiBundle,
 }
 
+/// Request body for confirming a pending provisioning.
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema, Validate)]
 pub struct ConfirmPendingProvisioningRequest {
     #[validate(length(min = 16, max = 2048))]
@@ -77,6 +87,7 @@ pub struct ConfirmPendingProvisioningRequest {
     pub lora_addr: Option<i32>,
 }
 
+/// Response for a confirmed provisioning.
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct ConfirmPendingProvisioningResponse {
     pub pending_id: Uuid,
@@ -85,12 +96,14 @@ pub struct ConfirmPendingProvisioningResponse {
     pub forwarder_id: Option<Uuid>,
 }
 
+/// Response for a cancelled provisioning.
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct CancelPendingProvisioningResponse {
     pub pending_id: Uuid,
     pub status: i16,
 }
 
+/// Response listing pending provisioning registrations.
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct ListPendingProvisioningResponse {
     pub pendings: Vec<PendingProvisioningView>,

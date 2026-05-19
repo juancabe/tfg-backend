@@ -2,6 +2,7 @@
 //!
 //! Defines handlers for "/login", "/register", "/refresh", "/change-password",
 //! "/password-reset-request" and "/password-reset" endpoints
+#![allow(missing_docs)]
 
 use crate::helpers::validation::{
     LOGIN_MAX_LEN, LOGIN_MIN_LEN, PASSWORD_MAX_LEN, PASSWORD_MIN_LEN,
@@ -90,6 +91,7 @@ impl IntoResponse for LoginResponse {
     }
 }
 
+/// Response returned on successful login with JWT tokens.
 #[derive(Deserialize, Serialize, Debug, utoipa::ToSchema)]
 pub struct CorrectLoginResponse {
     pub session_token: String,
@@ -105,18 +107,21 @@ pub struct ChangePasswordPayload {
     pub new_password: String,
 }
 
+/// Response returned after a successful password change with new tokens.
 #[derive(Serialize, utoipa::ToSchema)]
 pub struct ChangePasswordResponse {
     pub session_token: String,
     pub refresh_token: String,
 }
 
+/// Request payload for initiating a password reset via email.
 #[derive(Deserialize, utoipa::ToSchema, Validate)]
 pub struct PasswordResetRequestPayload {
     #[validate(email)]
     pub email: String,
 }
 
+/// Request payload for completing a password reset with a verification code.
 #[derive(Deserialize, utoipa::ToSchema, Validate)]
 pub struct PasswordResetPayload {
     #[validate(email)]
@@ -127,6 +132,7 @@ pub struct PasswordResetPayload {
     pub new_password: String,
 }
 
+/// Query parameters for the email verification endpoint.
 #[derive(Deserialize)]
 pub struct VerifyEmailQuery {
     pub token: String,

@@ -1,3 +1,6 @@
+//! Authentication service layer for login, registration, password management, and sessions.
+#![allow(missing_docs)]
+
 mod jwt;
 
 use chrono::{Duration, Utc};
@@ -14,13 +17,18 @@ use crate::{dao::identity::IdentityDao, model::models::NewRefreshToken};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+/// Input for completing a password reset.
 pub struct PasswordResetInput {
+    /// The 6-digit verification code.
     code: String,
+    /// The user's email address.
     email: String,
+    /// The new password to set.
     new_password: String,
 }
 
 impl PasswordResetInput {
+    /// Creates a new [`PasswordResetInput`].
     pub fn new(email: String, code: String, new_password: String) -> Self {
         Self {
             code,
@@ -30,7 +38,9 @@ impl PasswordResetInput {
     }
 }
 
+/// Input for user login.
 pub struct LoginInput {
+    /// The authentication method to use.
     auth_method: AuthMethod,
 }
 
@@ -42,23 +52,33 @@ impl From<LoginPayload> for LoginInput {
     }
 }
 
+/// Input for user registration.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RegisterInput {
+    /// The user's chosen login name.
     login: String,
+    /// The authentication method to register with.
     auth_method: AuthMethod,
 }
 
+/// Input for changing a user's password.
 pub struct ChangePasswordInput {
+    /// The user's ID.
     user_id: Uuid,
+    /// The current password for verification.
     current_password: String,
+    /// The new password to set.
     new_password: String,
 }
 
+/// Output of an email verification attempt.
 pub struct VerifyEmailOut {
+    /// Whether the email was successfully verified.
     pub verified: bool,
 }
 
 impl ChangePasswordInput {
+    /// Creates a new [`ChangePasswordInput`].
     pub fn new(user_id: Uuid, current_password: String, new_password: String) -> Self {
         Self {
             user_id,
@@ -77,15 +97,20 @@ impl From<RegisterPayload> for RegisterInput {
     }
 }
 
+/// A pair of session and refresh JWT tokens.
 pub struct TokenPair {
+    /// The short-lived session token.
     pub session_token: String,
+    /// The long-lived refresh token.
     pub refresh_token: String,
 }
 
+/// Service for authentication operations.
 pub struct AuthService<D: IdentityDao> {
     dao: D,
 }
 
+/// Output of a session refresh operation.
 #[derive(Serialize)]
 pub struct RefreshSessionOut {
     pub session_token: String,
@@ -93,6 +118,7 @@ pub struct RefreshSessionOut {
 }
 
 impl<D: IdentityDao> AuthService<D> {
+    /// Creates a new [`AuthService`] with the given identity DAO.
     pub fn new(dao: D) -> Self {
         Self { dao }
     }
