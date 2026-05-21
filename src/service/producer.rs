@@ -76,6 +76,7 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> Produc
         user_id: Uuid,
         new_producer: interface::types::producer::NewProducer,
     ) -> Result<Producer, ServiceError> {
+        let name_for_error = new_producer.name.clone();
         validate_firmware_compatible_name(&new_producer.name, "name")?;
         validate_firmware_compatible_name(&new_producer.ble_name, "ble_name")?;
 
@@ -112,7 +113,9 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> Produc
 
         self.producer_dao
             .create_producer(model_new_producer)
-            .map_err(Into::into)
+            .map_err(|err| {
+                map_unique_producer_name_error(err, "producer name", Some(name_for_error.as_str()))
+            })
             .map(|p| crate::interface::types::producer::Producer::from_producer_location(p, loc))
     }
 
@@ -216,6 +219,7 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> Produc
             );
         }
 
+        let name_for_error = patch.name.clone();
         let update = ProducerUpdate {
             name: patch.name,
             description: patch.description,
@@ -225,7 +229,12 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> Produc
             forward_lora: None,
         };
 
-        let producer = self.producer_dao.update_metadata(producer_id, update)?;
+        let producer = self
+            .producer_dao
+            .update_metadata(producer_id, update)
+            .map_err(|err| {
+                map_unique_producer_name_error(err, "producer name", name_for_error.as_deref())
+            })?;
         let location = self.location_dao.get_location(producer.location_id)?;
         Ok(crate::interface::types::producer::Producer::from_producer_location(producer, location))
     }
@@ -237,6 +246,23 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> Produc
         _producer_id: Uuid,
     ) -> Result<ProducerAuthCredentials, ServiceError> {
         todo!("Implement credential rotation in DAO")
+    }
+}
+
+fn map_unique_producer_name_error(
+    err: crate::dao::DaoError,
+    field_name: &str,
+    attempted_name: Option<&str>,
+) -> ServiceError {
+    match err {
+        crate::dao::DaoError::UniqueViolation(_) => {
+            let message = match attempted_name {
+                Some(name) => format!("{field_name} '{name}' already exists"),
+                None => format!("{field_name} already exists"),
+            };
+            ServiceError::TypeError(crate::interface::types::TypeError::Validation(message))
+        }
+        other => ServiceError::DbError(other),
     }
 }
 

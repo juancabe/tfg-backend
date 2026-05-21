@@ -28,6 +28,9 @@ async fn log_middleware(
 ) -> axum::response::Response {
     let method = req.method().clone();
     let path = req.uri().path().to_string();
+
+    log::debug!("Req: {req:?}");
+
     let route = req
         .extensions()
         .get::<axum::extract::MatchedPath>()

@@ -139,24 +139,7 @@ impl<M: MqttDao> MqttAuthService<M> {
             )
             .ok()??;
 
-        let matches_delegated_username = parsed.mqtt_username == delegated.mqtt_username;
-        let matches_forwarder_username = parsed.mqtt_username == identity.mqtt_username;
-        if !matches_delegated_username && !matches_forwarder_username {
-            return None;
-        }
-
-        let topic_is_allowed = if matches_delegated_username {
-            topic_matches_filter(topic, &delegated.topic)
-        } else {
-            let forwarder_topic = replace_topic_username(
-                &delegated.topic,
-                delegated.mqtt_username.as_str(),
-                identity.mqtt_username.as_str(),
-            )?;
-            topic_matches_filter(topic, &forwarder_topic)
-        };
-
-        if !topic_is_allowed {
+        if !topic_matches_filter(topic, &delegated.topic) {
             return None;
         }
 
@@ -314,9 +297,10 @@ impl From<crate::dao::DbPool> for MqttForwarderPeersService<PgMqttDao> {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 struct ParsedDataTopic {
-    mqtt_username: String,
+    user_login: String,
     group_name: String,
     producer_name: String,
     template_id: Option<Uuid>,
@@ -334,7 +318,7 @@ impl ParsedDataTopic {
         if users != "users" {
             return None;
         }
-        let mqtt_username = it.next()?.to_string();
+        let user_login = it.next()?.to_string();
 
         let groups = it.next()?;
         if groups != "groups" {
@@ -356,7 +340,7 @@ impl ParsedDataTopic {
         let template_id = it.next().and_then(|v| Uuid::parse_str(v).ok());
 
         Some(Self {
-            mqtt_username,
+            user_login,
             group_name,
             producer_name,
             template_id,
@@ -393,31 +377,6 @@ fn topic_matches_filter(topic: &str, filter: &str) -> bool {
     }
 
     ti == topic_levels.len()
-}
-
-fn replace_topic_username(topic: &str, from_username: &str, to_username: &str) -> Option<String> {
-    let mut it = topic.split('/').filter(|s| !s.is_empty());
-    let v = it.next()?;
-    if v != "v1" {
-        return None;
-    }
-    let users = it.next()?;
-    if users != "users" {
-        return None;
-    }
-    let username = it.next()?;
-    if username != from_username {
-        return None;
-    }
-
-    let mut rebuilt = String::from("/v1/users/");
-    rebuilt.push_str(to_username);
-    for part in it {
-        rebuilt.push('/');
-        rebuilt.push_str(part);
-    }
-
-    Some(rebuilt)
 }
 
 #[cfg(test)]
@@ -495,7 +454,7 @@ mod tests {
     }
 
     #[test]
-    fn test_authorize_publish_delegated_requires_matching_mqtt_username() {
+    fn test_authorize_publish_delegated_requires_matching_user_login() {
         let ctx = setup();
         let owner = create_test_user(&ctx.pool, "mqtt_auth_delegate_user");
         let loc = create_test_location(&ctx.pool, "mqtt_auth_delegate_user");
@@ -542,7 +501,7 @@ mod tests {
     }
 
     #[test]
-    fn test_authorize_publish_delegated_allows_forwarder_username() {
+    fn test_authorize_publish_delegated_rejects_forwarder_topic() {
         let ctx = setup();
         let owner = create_test_user(&ctx.pool, "mqtt_auth_delegate_forwarder_user");
         let loc = create_test_location(&ctx.pool, "mqtt_auth_delegate_forwarder_user");
@@ -583,30 +542,19 @@ mod tests {
             .expect("insert delegated mqtt auth");
         drop(conn);
 
-        let forwarder_username = "forwarder-user".to_string();
         let forwarder_topic = format!(
             "/v1/users/{}/groups/{}/producers/{}/data_templates/{}",
-            forwarder_username, group.name, delegated.name, template_id
+            "forwarder-user", group.name, delegated.name, template_id
         );
 
         let svc: MqttAuthService<PgMqttDao> = MqttAuthService::from(ctx.pool.clone());
         let identity = ProducerIdentity {
             producer_id: forwarder.id,
-            mqtt_username: forwarder_username,
+            mqtt_username: "forwarder-user".to_string(),
             allowed_topic: "/v1/forbidden".to_string(),
             allowed_subscribe_topic: "/v1/forbidden".to_string(),
         };
 
-        let authz = svc
-            .authorize_publish(&identity, &forwarder_topic)
-            .expect("forwarder username delegated publish should be authorized");
-
-        match authz {
-            PublishAuthorization::Delegated(target) => {
-                assert_eq!(target.producer_id, delegated.id);
-                assert_eq!(target.template_id, Some(template_id));
-            }
-            PublishAuthorization::Direct(_) => panic!("expected delegated authorization"),
-        }
+        assert!(svc.authorize_publish(&identity, &forwarder_topic).is_none());
     }
 }

@@ -13,7 +13,7 @@ use crate::{
     service::ServiceError,
 };
 
-const DEFAULT_LIMIT: u32 = 500;
+const DEFAULT_LIMIT: u32 = MAX_LIMIT;
 const MAX_LIMIT: u32 = 5000;
 
 /// Service for template and data query operations.
@@ -59,17 +59,18 @@ impl<T: TemplateDataDao, P: ProducerDao, G: GroupDao> TemplateDataService<T, P, 
             Err(ServiceError::Forbidden)?;
         }
 
-        let bounded_limit = query.limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as i64;
         let filter = crate::dao::template_data::DataQueryFilter {
             template_id: query.template_id,
             from: query.from,
             to: query.to,
-            limit: bounded_limit,
         };
 
-        let samples = self
+        let all_samples = self
             .template_data_dao
             .list_data_for_producer(producer_id, filter)?;
+
+        let limit = query.limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
+        let samples = downsample(all_samples, limit);
 
         let template_ids: Vec<Uuid> = samples
             .iter()
@@ -105,4 +106,28 @@ fn validate_time_range(
         ));
     }
     Ok(())
+}
+
+fn downsample(
+    data: Vec<crate::model::models::Data>,
+    limit: usize,
+) -> Vec<crate::model::models::Data> {
+    if data.len() <= limit {
+        log::debug!(
+            "[downsample] data.len(): {} <= limit {} ",
+            data.len(),
+            limit
+        );
+        return data;
+    }
+
+    let step = data.len() as f64 / limit as f64;
+
+    let mut indices: Vec<usize> = (0..limit).map(|i| (i as f64 * step) as usize).collect();
+    indices.dedup();
+    data.into_iter()
+        .enumerate()
+        .filter(|(idx, _)| indices.binary_search(idx).is_ok())
+        .map(|(_, item)| item)
+        .collect()
 }

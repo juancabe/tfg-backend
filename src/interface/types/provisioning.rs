@@ -49,6 +49,7 @@ pub struct ListAvailableForwardersResponse {
 pub struct ProvisioningWifiBundle {
     pub broker_host: String,
     pub broker_port: i16,
+    pub user_login: String,
     pub mqtt_username: String,
     pub mqtt_password: String,
     pub publish_topic: Option<String>,

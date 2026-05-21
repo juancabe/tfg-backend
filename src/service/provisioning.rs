@@ -1,6 +1,5 @@
 //! Device provisioning service layer.
 
-
 use chrono::{Duration, Utc};
 use diesel::Connection;
 use diesel::ExpressionMethods;
@@ -61,33 +60,43 @@ pub struct ForwarderCandidate {
 }
 
 /// Service for device provisioning operations.
-pub struct ProvisioningService<Pd, Gd, Ld, Prd>
+pub struct ProvisioningService<Pd, Gd, Ld, Prd, Id>
 where
     Pd: PendingRegistrationDao,
     Gd: GroupDao,
     Ld: LocationDao,
     Prd: ProducerDao,
+    Id: crate::dao::identity::IdentityDao,
 {
     pending_dao: Pd,
     group_dao: Gd,
     location_dao: Ld,
     producer_dao: Prd,
+    identity_dao: Id,
 }
 
-impl<Pd, Gd, Ld, Prd> ProvisioningService<Pd, Gd, Ld, Prd>
+impl<Pd, Gd, Ld, Prd, Id> ProvisioningService<Pd, Gd, Ld, Prd, Id>
 where
     Pd: PendingRegistrationDao,
     Gd: GroupDao,
     Ld: LocationDao,
     Prd: ProducerDao,
+    Id: crate::dao::identity::IdentityDao,
 {
     /// Creates a new [`ProvisioningService`] with the given DAOs.
-    pub fn new(pending_dao: Pd, group_dao: Gd, location_dao: Ld, producer_dao: Prd) -> Self {
+    pub fn new(
+        pending_dao: Pd,
+        group_dao: Gd,
+        location_dao: Ld,
+        producer_dao: Prd,
+        identity_dao: Id,
+    ) -> Self {
         Self {
             pending_dao,
             group_dao,
             location_dao,
             producer_dao,
+            identity_dao,
         }
     }
 
@@ -97,8 +106,6 @@ where
         owner_user_id: Uuid,
         req: CreatePendingProvisioningRequest,
     ) -> Result<CreatePendingProvisioningResponse, ServiceError> {
-        validate_name_sizes(&req)?;
-
         let forward_lora = req.forward_lora.unwrap_or(false);
         if forward_lora && req.forwarder_id.is_some() {
             return Err(ServiceError::TypeError(
@@ -151,6 +158,12 @@ where
             }
         }
 
+        let owner = self
+            .identity_dao
+            .find_by_id(owner_user_id)?
+            .ok_or(ServiceError::NotFound)?;
+        let user_login = owner.login;
+
         let broker_host = crate::config::get().get_mqtt_provision_host().to_string();
         let broker_port: i16 = crate::config::get().get_mqtt_provision_port();
 
@@ -178,7 +191,7 @@ where
         let publish_topic = req.data_template_id.map(|template_id| {
             format!(
                 "/v1/users/{}/groups/{}/producers/{}/data_templates/{}",
-                mqtt_username, group_name, req.producer_name, template_id
+                user_login, group_name, req.producer_name, template_id
             )
         });
         let mqtt_topic = publish_topic
@@ -187,7 +200,7 @@ where
 
         let mqtt_subscribe_topic = format!(
             "/v1/users/{}/groups/{}/forwarder_peers/{}",
-            mqtt_username, group_name, req.producer_name
+            user_login, group_name, req.producer_name
         );
 
         let now = Utc::now();
@@ -228,6 +241,7 @@ where
             wifi_bundle: ProvisioningWifiBundle {
                 broker_host,
                 broker_port,
+                user_login,
                 mqtt_username,
                 mqtt_password: mqtt_password_plain,
                 publish_topic,
@@ -432,14 +446,21 @@ where
 }
 
 impl From<DbPool>
-    for ProvisioningService<PgPendingRegistrationDao, PgGroupDao, PgLocationDao, PgProducerDao>
+    for ProvisioningService<
+        PgPendingRegistrationDao,
+        PgGroupDao,
+        PgLocationDao,
+        PgProducerDao,
+        crate::dao::identity::PgIdentityDao,
+    >
 {
     fn from(pool: DbPool) -> Self {
         Self::new(
             PgPendingRegistrationDao::new(pool.clone()),
             PgGroupDao::new(pool.clone()),
             PgLocationDao::new(pool.clone()),
-            PgProducerDao::new(pool),
+            PgProducerDao::new(pool.clone()),
+            crate::dao::identity::PgIdentityDao::new(pool),
         )
     }
 }

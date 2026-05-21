@@ -124,7 +124,7 @@ fn extract_template_id(topic: &str) -> Option<Uuid> {
     }
 
     let _users = it.next()?;
-    let _username = it.next()?;
+    let _user_login = it.next()?;
     let _groups = it.next()?;
     let _group = it.next()?;
     let _producers = it.next()?;

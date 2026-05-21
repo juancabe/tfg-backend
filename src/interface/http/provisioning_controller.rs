@@ -36,13 +36,19 @@ pub async fn post_pending(
     State(AppState { pool, .. }): State<AppState>,
     Json(body): Json<CreatePendingProvisioningRequest>,
 ) -> Result<(StatusCode, Json<CreatePendingProvisioningResponse>), HttpApiError> {
+    log::info!("[post_pending] body: {body:?}");
     body.validate().map_err(|e| {
+        log::warn!("[post_pending] body validation error: {e:?}");
         HttpApiError::ServiceError(crate::service::ServiceError::TypeError(
             crate::interface::types::TypeError::Validation(e.to_string()),
         ))
     })?;
-    let service: ProvisioningService<_, _, _, _> = pool.into();
-    let created = service.create_pending(jwt.user_id, body)?;
+    log::debug!("[post_pending] no error on body validation");
+
+    let service: ProvisioningService<_, _, _, _, _> = pool.into();
+    let created = service
+        .create_pending(jwt.user_id, body)
+        .inspect_err(|e| log::debug!("[post_pending] service error: {e:?}"))?;
     Ok((StatusCode::CREATED, Json(created)))
 }
 
@@ -57,7 +63,7 @@ pub async fn get_pending(
     jwt: JWT,
     State(AppState { pool, .. }): State<AppState>,
 ) -> Result<Json<ListPendingProvisioningResponse>, HttpApiError> {
-    let service: ProvisioningService<_, _, _, _> = pool.into();
+    let service: ProvisioningService<_, _, _, _, _> = pool.into();
     let out = service.list_pending_for_owner(jwt.user_id)?;
     Ok(Json(out))
 }
@@ -75,7 +81,7 @@ pub async fn get_available_forwarders(
     State(AppState { pool, .. }): State<AppState>,
     Path(group_id): Path<Uuid>,
 ) -> Result<Json<ListAvailableForwardersResponse>, HttpApiError> {
-    let service: ProvisioningService<_, _, _, _> = pool.into();
+    let service: ProvisioningService<_, _, _, _, _> = pool.into();
     let out = service.list_available_forwarders(jwt.user_id, group_id)?;
     Ok(Json(out))
 }
@@ -100,7 +106,7 @@ pub async fn post_pending_confirm(
             crate::interface::types::TypeError::Validation(e.to_string()),
         ))
     })?;
-    let service: ProvisioningService<_, _, _, _> = state.pool.into();
+    let service: ProvisioningService<_, _, _, _, _> = state.pool.into();
     let out = service.confirm_pending(jwt.user_id, id, body)?;
     if let Some(forwarder_id) = out.forwarder_id {
         if let Err(e) = state.mqtt_peers_tx.send(forwarder_id) {
@@ -123,7 +129,7 @@ pub async fn post_pending_cancel(
     State(AppState { pool, .. }): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<CancelPendingProvisioningResponse>, HttpApiError> {
-    let service: ProvisioningService<_, _, _, _> = pool.into();
+    let service: ProvisioningService<_, _, _, _, _> = pool.into();
     let out = service.cancel_pending(jwt.user_id, id)?;
     Ok(Json(out))
 }
@@ -732,7 +738,10 @@ mod tests {
         make_forwarder_available(&ctx.pool, forwarder.id, 2021, "a2V5LWZ3ZA==");
 
         let (tx, mut rx) = tokio::sync::broadcast::channel(10);
-        let state = State(AppState { pool: ctx.pool.clone(), mqtt_peers_tx: tx });
+        let state = State(AppState {
+            pool: ctx.pool.clone(),
+            mqtt_peers_tx: tx,
+        });
 
         let mut req = mk_pending_req(group.id, None);
         req.forwarder_id = Some(forwarder.id);

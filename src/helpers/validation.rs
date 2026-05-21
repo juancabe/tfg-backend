@@ -13,7 +13,7 @@ pub const PASSWORD_MAX_LEN: u64 = 128;
 /// Minimum length for a name field.
 pub const NAME_MIN_LEN: u64 = 1;
 /// Maximum length for a name field.
-pub const NAME_MAX_LEN: u64 = 32;
+pub const NAME_MAX_LEN: u64 = common_types::common_sizes::MAX_PRODUCER_NAME_LEN as u64;
 /// Maximum length for a description field.
 pub const DESCRIPTION_MAX_LEN: u64 = 512;
 

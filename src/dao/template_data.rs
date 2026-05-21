@@ -16,8 +16,6 @@ pub struct DataQueryFilter {
     pub from: Option<DateTime<Utc>>,
     /// Optional end time for the data range.
     pub to: Option<DateTime<Utc>>,
-    /// Maximum number of records to return.
-    pub limit: i64,
 }
 
 /// Trait defining template and data query database operations.
@@ -127,7 +125,6 @@ impl TemplateDataDao for PgTemplateDataDao {
 
         query
             .order_by(recv_at.desc())
-            .limit(filter.limit)
             .select(Data::as_select())
             .load(conn)
             .map_err(Into::into)

@@ -79,6 +79,7 @@ impl<G: GroupDao + Clone, L: LocationDao + Clone> GroupService<G, L> {
             is_public,
             location,
         } = new_group;
+        let group_name_for_error = name.clone();
         // Validate group name for firmware compatibility early so we don't create
         // location resources when the group name is invalid.
         validate_firmware_compatible_name(&name, "group name")?;
@@ -106,7 +107,9 @@ impl<G: GroupDao + Clone, L: LocationDao + Clone> GroupService<G, L> {
 
         self.group_dao
             .create_group(new_group)
-            .map_err(Into::into)
+            .map_err(|err| {
+                map_unique_group_name_error(err, "group name", Some(group_name_for_error.as_str()))
+            })
             .map(Into::into)
     }
 
@@ -156,6 +159,7 @@ impl<G: GroupDao + Clone, L: LocationDao + Clone> GroupService<G, L> {
             validate_firmware_compatible_name(name, "group name")?;
         }
 
+        let name_for_error = patch.name.clone();
         let update = GroupUpdate {
             name: patch.name,
             description: patch.description,
@@ -165,8 +169,27 @@ impl<G: GroupDao + Clone, L: LocationDao + Clone> GroupService<G, L> {
 
         self.group_dao
             .update_group(group_id, update)
-            .map_err(Into::into)
+            .map_err(|err| {
+                map_unique_group_name_error(err, "group name", name_for_error.as_deref())
+            })
             .map(Into::into)
+    }
+}
+
+fn map_unique_group_name_error(
+    err: crate::dao::DaoError,
+    field_name: &str,
+    attempted_name: Option<&str>,
+) -> ServiceError {
+    match err {
+        crate::dao::DaoError::UniqueViolation(_) => {
+            let message = match attempted_name {
+                Some(name) => format!("{field_name} '{name}' already exists"),
+                None => format!("{field_name} already exists"),
+            };
+            ServiceError::TypeError(crate::interface::types::TypeError::Validation(message))
+        }
+        other => ServiceError::DbError(other),
     }
 }
 
