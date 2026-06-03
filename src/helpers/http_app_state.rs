@@ -9,4 +9,6 @@ pub struct AppState {
     pub pool: dao::DbPool,
     /// Broadcast channel sender for notifying about MQTT peer producer IDs.
     pub mqtt_peers_tx: tokio::sync::broadcast::Sender<uuid::Uuid>,
+    /// Broadcast channel sender for notifying erase of producer.
+    pub mqtt_erase_tx: tokio::sync::broadcast::Sender<uuid::Uuid>,
 }

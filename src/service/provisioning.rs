@@ -198,11 +198,6 @@ where
             .clone()
             .unwrap_or_else(|| "/v1/forbidden".to_string());
 
-        let mqtt_subscribe_topic = format!(
-            "/v1/users/{}/groups/{}/forwarder_peers/{}",
-            user_login, group_name, req.producer_name
-        );
-
         let now = Utc::now();
         let expires_at = now + Duration::minutes(DEFAULT_PENDING_TTL_MINUTES);
 
@@ -226,7 +221,6 @@ where
             mqtt_username: mqtt_username.clone(),
             mqtt_password_hash,
             mqtt_topic: mqtt_topic.clone(),
-            mqtt_subscribe_topic: mqtt_subscribe_topic.clone(),
             broker_host: broker_host.clone(),
             broker_port,
             x25519_pub_key_bytes_base64: None,
@@ -245,7 +239,6 @@ where
                 mqtt_username,
                 mqtt_password: mqtt_password_plain,
                 publish_topic,
-                subscribe_topic: mqtt_subscribe_topic,
             },
         })
     }
@@ -362,7 +355,6 @@ where
                     username: pending.mqtt_username.clone(),
                     password_hash: pending.mqtt_password_hash.clone(),
                     topic: pending.mqtt_topic.clone(),
-                    subscribe_topic: pending.mqtt_subscribe_topic.clone(),
                 },
             )?;
 
@@ -491,46 +483,6 @@ fn validate_pending_owner_and_status(
 
     if pending.status != PendingProducerRegistrationStatus::Pending as i16 {
         return Err(ServiceError::Forbidden);
-    }
-
-    Ok(())
-}
-
-fn validate_name_sizes(req: &CreatePendingProvisioningRequest) -> Result<(), ServiceError> {
-    if req.producer_name.is_empty() || req.producer_name.len() > MAX_FIRMWARE_NAME_LEN {
-        return Err(ServiceError::TypeError(
-            crate::interface::types::TypeError::Validation(format!(
-                "producer_name must be 1..={MAX_FIRMWARE_NAME_LEN} characters"
-            )),
-        ));
-    }
-    if contains_mqtt_topic_meta(&req.producer_name) {
-        return Err(ServiceError::TypeError(
-            crate::interface::types::TypeError::Validation(
-                "producer_name cannot include '/', '+' or '#'".to_string(),
-            ),
-        ));
-    }
-
-    if req.ble_name.is_empty() || req.ble_name.len() > MAX_FIRMWARE_NAME_LEN {
-        return Err(ServiceError::TypeError(
-            crate::interface::types::TypeError::Validation(format!(
-                "ble_name must be 1..={MAX_FIRMWARE_NAME_LEN} characters"
-            )),
-        ));
-    }
-    if contains_mqtt_topic_meta(&req.ble_name) {
-        return Err(ServiceError::TypeError(
-            crate::interface::types::TypeError::Validation(
-                "ble_name cannot include '/', '+' or '#'".to_string(),
-            ),
-        ));
-    }
-
-    if req.group_id.is_nil() {
-        return Err(ServiceError::TypeError(
-            crate::interface::types::TypeError::Validation("group_id cannot be nil".to_string()),
-        ));
     }
 
     Ok(())

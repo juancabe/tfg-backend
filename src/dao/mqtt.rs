@@ -18,13 +18,26 @@ pub struct DelegatedPublishTargetRow {
     pub mqtt_username: String,
 }
 
+/// Represents a row used to resolve broker auth with identity.
+#[derive(Debug, Clone)]
+pub struct MqttBrokerAuthWithIdentity {
+    /// The base MQTT broker auth record.
+    pub auth: MqttBrokerAuth,
+    /// The name of the producer.
+    pub producer_name: String,
+    /// The name of the group the producer belongs to.
+    pub group_name: String,
+    /// The login name of the owner of the group.
+    pub owner_login: String,
+}
+
 /// Trait defining MQTT-related database operations.
 pub trait MqttDao {
     /// Finds MQTT broker auth credentials by username.
     fn find_broker_auth_by_username(
         &self,
         username_in: &str,
-    ) -> Result<Option<MqttBrokerAuth>, DaoError>;
+    ) -> Result<Option<MqttBrokerAuthWithIdentity>, DaoError>;
 
     /// Finds a delegated publish target by forwarder, username, group, and producer name.
     fn find_delegated_publish_target(
@@ -74,17 +87,32 @@ impl MqttDao for PgMqttDao {
     fn find_broker_auth_by_username(
         &self,
         username_in: &str,
-    ) -> Result<Option<MqttBrokerAuth>, DaoError> {
-        use crate::model::schema::mqtt_broker_auths::dsl::*;
+    ) -> Result<Option<MqttBrokerAuthWithIdentity>, DaoError> {
+        use crate::model::schema::{mqtt_broker_auths, producers, groups, users};
 
         let conn = &mut self.pool.get()?;
 
-        mqtt_broker_auths
-            .filter(username.eq(username_in))
-            .select(MqttBrokerAuth::as_select())
-            .first(conn)
+        let result = mqtt_broker_auths::table
+            .inner_join(producers::table.on(mqtt_broker_auths::producer_id.eq(producers::id)))
+            .inner_join(groups::table.on(producers::group_id.eq(groups::id)))
+            .inner_join(users::table.on(groups::owner_user_id.eq(users::id)))
+            .filter(mqtt_broker_auths::username.eq(username_in))
+            .select((
+                MqttBrokerAuth::as_select(),
+                producers::name,
+                groups::name,
+                users::login,
+            ))
+            .first::<(MqttBrokerAuth, String, String, String)>(conn)
             .optional()
-            .map_err(Into::into)
+            .map_err(Into::<DaoError>::into)?;
+
+        Ok(result.map(|(auth, producer_name, group_name, owner_login)| MqttBrokerAuthWithIdentity {
+            auth,
+            producer_name,
+            group_name,
+            owner_login,
+        }))
     }
 
     fn find_delegated_publish_target(
@@ -196,7 +224,7 @@ impl MqttDao for PgMqttDao {
 mod tests {
     use super::*;
 
-use crate::{
+    use crate::{
         helpers::data_templates::RANDOMFLOAT_TEMPLATE_ID,
         model::{
             models::{NewInternetAuth, NewMqttBrokerAuth},
@@ -229,7 +257,6 @@ use crate::{
                     username: "lookup-user".to_string(),
                     password_hash: "hashed-pass".to_string(),
                     topic: "/v1/topic".to_string(),
-                    subscribe_topic: "/v1/sub".to_string(),
                 })
                 .execute(&mut conn)
                 .expect("insert mqtt auth");
@@ -240,9 +267,12 @@ use crate::{
                 .expect("find by username");
 
             let row = row.expect("expected mqtt auth row");
-            assert_eq!(row.producer_id, producer.id);
-            assert_eq!(row.username, "lookup-user");
-            assert_eq!(row.topic, "/v1/topic");
+            assert_eq!(row.auth.producer_id, producer.id);
+            assert_eq!(row.auth.username, "lookup-user");
+            assert_eq!(row.auth.topic, "/v1/topic");
+            assert_eq!(row.owner_login, owner.login);
+            assert_eq!(row.group_name, group.name);
+            assert_eq!(row.producer_name, producer.name);
         }
 
         #[test]
@@ -288,7 +318,6 @@ use crate::{
                     username: "stored-user".to_string(),
                     password_hash: "unused".to_string(),
                     topic: topic.clone(),
-                    subscribe_topic: "/v1/forbidden".to_string(),
                 })
                 .execute(&mut conn)
                 .expect("insert delegated mqtt auth");
@@ -335,7 +364,6 @@ use crate::{
                     username: "stored-user".to_string(),
                     password_hash: "unused".to_string(),
                     topic: "/v1/topic".to_string(),
-                    subscribe_topic: "/v1/forbidden".to_string(),
                 })
                 .execute(&mut conn)
                 .expect("insert delegated mqtt auth");

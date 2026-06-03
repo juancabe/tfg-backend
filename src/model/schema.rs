@@ -94,7 +94,6 @@ diesel::table! {
         username -> Text,
         password_hash -> Text,
         topic -> Text,
-        subscribe_topic -> Text,
     }
 }
 
@@ -141,7 +140,6 @@ diesel::table! {
         mqtt_username -> Text,
         mqtt_password_hash -> Text,
         mqtt_topic -> Text,
-        mqtt_subscribe_topic -> Text,
         broker_host -> Text,
         broker_port -> Int2,
         x25519_pub_key_bytes_base64 -> Nullable<Text>,

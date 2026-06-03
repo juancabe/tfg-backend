@@ -168,6 +168,31 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> Produc
             .collect()
     }
 
+    /// Notifies via MQTT the need to erase the producer's flash
+    pub fn erase_producer(
+        &self,
+        user_id: Uuid,
+        producer_id: Uuid,
+        notify_channel: tokio::sync::broadcast::Sender<uuid::Uuid>,
+    ) -> Result<(), ServiceError> {
+        let producer = self
+            .producer_dao
+            .get_by_id(producer_id)?
+            .ok_or(ServiceError::NotFound)?;
+        let group = self.group_dao.get_group(producer.group_id)?;
+        if user_id != group.owner_user_id {
+            Err(ServiceError::Forbidden)?;
+        }
+
+        notify_channel
+            .send(producer_id)
+            .inspect_err(|e| {
+                log::error!("[erase_producer] error sending erase notification: {e:?}")
+            })
+            .map_err(|_| ServiceError::InternalError)
+            .map(|_| ())
+    }
+
     /// Deletes a producer. Only the group owner can delete.
     pub fn delete_producer(&self, user_id: Uuid, producer_id: Uuid) -> Result<(), ServiceError> {
         let producer = self

@@ -116,6 +116,7 @@ mod tests {
             State(AppState {
                 pool: ctx.pool,
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             }),
         )
         .await
@@ -151,6 +152,7 @@ mod tests {
             State(AppState {
                 pool: ctx.pool.clone(),
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             }),
             Path(producer.id),
             Query(ProducerDataQuery {
@@ -170,6 +172,7 @@ mod tests {
             State(AppState {
                 pool: ctx.pool,
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             }),
             Path(producer.id),
             Query(ProducerDataQuery {

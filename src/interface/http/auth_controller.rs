@@ -421,6 +421,7 @@ mod tests {
             let state = State(AppState {
                 pool: ctx.pool,
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             });
             let payload = Ok(Json(RegisterPayload {
                 login: "test_user".to_string(),
@@ -442,6 +443,7 @@ mod tests {
             let state = State(AppState {
                 pool: ctx.pool.clone(),
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             });
             let payload = RegisterPayload {
                 login: "test_user".to_string(),
@@ -476,6 +478,7 @@ mod tests {
             let state = State(AppState {
                 pool: ctx.pool.clone(),
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             });
 
             // Register first
@@ -512,6 +515,7 @@ mod tests {
             let state = State(AppState {
                 pool: ctx.pool,
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             });
 
             let login_payload = Ok(Json(LoginPayload {
@@ -533,6 +537,7 @@ mod tests {
             let state = State(AppState {
                 pool: ctx.pool,
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             });
             let payload = Ok(Json(RegisterPayload {
                 login: "ab".to_string(),
@@ -552,6 +557,7 @@ mod tests {
             let state = State(AppState {
                 pool: ctx.pool,
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             });
             let payload = Ok(Json(RegisterPayload {
                 login: "test_user".to_string(),
@@ -571,6 +577,7 @@ mod tests {
             let state = State(AppState {
                 pool: ctx.pool.clone(),
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             });
 
             let register_payload = RegisterPayload {
@@ -619,6 +626,7 @@ mod tests {
             let state = State(AppState {
                 pool: ctx.pool.clone(),
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             });
 
             // Register
@@ -656,6 +664,7 @@ mod tests {
             let state = State(AppState {
                 pool: ctx.pool.clone(),
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             });
 
             // Register and login to get refresh token
@@ -704,6 +713,7 @@ mod tests {
             let state = State(AppState {
                 pool: ctx.pool,
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             });
 
             let refresh_payload = Ok(Json(RefreshPayload {
@@ -720,6 +730,7 @@ mod tests {
             let state = State(AppState {
                 pool: ctx.pool.clone(),
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             });
 
             // Register and login to get tokens
@@ -768,6 +779,7 @@ mod tests {
             let state = State(AppState {
                 pool: ctx.pool.clone(),
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             });
 
             // Register and login to get refresh token
@@ -824,6 +836,7 @@ mod tests {
             let state = State(AppState {
                 pool: ctx.pool.clone(),
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             });
 
             let register_payload = RegisterPayload {
@@ -882,6 +895,7 @@ mod tests {
             let state = State(AppState {
                 pool: ctx.pool.clone(),
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             });
 
             let register_payload = RegisterPayload {
@@ -911,6 +925,7 @@ mod tests {
             let state = State(AppState {
                 pool: ctx.pool,
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             });
 
             let payload = Ok(Json(PasswordResetRequestPayload {
@@ -927,6 +942,7 @@ mod tests {
             let state = State(AppState {
                 pool: ctx.pool.clone(),
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             });
 
             let register_payload = RegisterPayload {
@@ -980,6 +996,7 @@ mod tests {
             let state = State(AppState {
                 pool: ctx.pool,
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             });
 
             let payload = Ok(Json(PasswordResetPayload {

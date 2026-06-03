@@ -61,8 +61,9 @@ pub struct PostProducerResponse {
 
 /// Request body for updating a producer.
 #[derive(Deserialize, Serialize, Debug, utoipa::ToSchema)]
-pub struct PatchProducerBody {
-    producer: UpdateProducer,
+pub enum PatchProducerBody {
+    UpdateMetadata(UpdateProducer),
+    Erase,
 }
 
 /// Response for a successful producer update.
@@ -173,7 +174,7 @@ pub async fn post_producer(
     params(("id" = Uuid, Path, description = "The unique ID of the producer")),
     security(("bearer_auth" = [])),
     request_body = PatchProducerBody,
-    responses((status = 200, description = "Producer updated", body = PatchProducerResponse))
+    responses((status = 200, description = "Operation applied", body = PatchProducerResponse))
 )]
 pub async fn patch_producer_by_id(
     jwt: JWT,
@@ -181,17 +182,21 @@ pub async fn patch_producer_by_id(
     Path(id): Path<Uuid>,
     Json(body): Json<PatchProducerBody>,
 ) -> Result<Json<PatchProducerResponse>, HttpApiError> {
-    body.producer.validate().map_err(|e| {
+    let p_service: ProducerService<PgProducerDao, PgLocationDao, PgGroupDao> = state.pool.into();
+    let old_producer = p_service.get_producer(jwt.user_id, id)?;
+
+    let PatchProducerBody::UpdateMetadata(update_body) = body else {
+        p_service.erase_producer(jwt.user_id, id, state.mqtt_erase_tx)?;
+        return Ok(Json(old_producer.into()));
+    };
+
+    update_body.validate().map_err(|e| {
         HttpApiError::ServiceError(crate::service::ServiceError::TypeError(
             crate::interface::types::TypeError::Validation(e.to_string()),
         ))
     })?;
-    let p_service: ProducerService<PgProducerDao, PgLocationDao, PgGroupDao> = state.pool.into();
 
-    // Fetch old producer to get its old forwarder_id
-    let old_producer = p_service.get_producer(jwt.user_id, id).ok();
-
-    let producer = p_service.update_producer(jwt.user_id, id, body.producer)?;
+    let producer = p_service.update_producer(jwt.user_id, id, update_body)?;
 
     // Send event for the new forwarder_id
     if let Some(forwarder_id) = producer.forwarder_id {
@@ -199,13 +204,11 @@ pub async fn patch_producer_by_id(
     }
 
     // Send event for the old forwarder_id if it's different
-    if let Some(old) = old_producer
-        && let Some(old_forwarder_id) = old.forwarder_id
+    if let Some(old_forwarder_id) = old_producer.forwarder_id
         && producer.forwarder_id != Some(old_forwarder_id)
+        && let Err(e) = state.mqtt_peers_tx.send(old_forwarder_id)
     {
-        if let Err(e) = state.mqtt_peers_tx.send(old_forwarder_id) {
-            log::warn!("Failed to broadcast old forwarder update: {}", e);
-        }
+        log::warn!("Failed to broadcast old forwarder update: {}", e);
     }
 
     Ok(Json(producer.into()))
@@ -288,6 +291,7 @@ mod tests {
             let state = State(AppState {
                 pool: ctx.pool,
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             });
 
             let res = producer_controller::get_producers(jwt, state)
@@ -309,6 +313,7 @@ mod tests {
             let state = State(AppState {
                 pool: ctx.pool,
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             });
 
             let res = producer_controller::get_producer_by_id(jwt, state, Path(producer.id))
@@ -325,6 +330,7 @@ mod tests {
             let state = State(AppState {
                 pool: ctx.pool,
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             });
 
             let res =
@@ -343,6 +349,7 @@ mod tests {
             let state = State(AppState {
                 pool: ctx.pool,
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             });
 
             let body = Json(PostProducerBody {
@@ -381,6 +388,7 @@ mod tests {
             let state = State(AppState {
                 pool: ctx.pool,
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             });
 
             let body = Json(PostProducerBody {
@@ -415,6 +423,7 @@ mod tests {
             let state = State(AppState {
                 pool: ctx.pool,
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             });
 
             let body = Json(PostProducerBody {
@@ -450,18 +459,17 @@ mod tests {
             let state = State(AppState {
                 pool: ctx.pool.clone(),
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             });
 
             let res = producer_controller::patch_producer_by_id(
                 jwt,
                 state,
                 Path(producer.id),
-                Json(PatchProducerBody {
-                    producer: UpdateProducer {
-                        name: Some("Updated Producer".to_string()),
-                        description: Some("Updated desc".to_string()),
-                    },
-                }),
+                Json(PatchProducerBody::UpdateMetadata(UpdateProducer {
+                    name: Some("Updated Producer".to_string()),
+                    description: Some("Updated desc".to_string()),
+                })),
             )
             .await
             .unwrap();
@@ -482,18 +490,17 @@ mod tests {
             let state = State(AppState {
                 pool: ctx.pool.clone(),
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             });
 
             let res = producer_controller::patch_producer_by_id(
                 jwt,
                 state,
                 Path(producer.id),
-                Json(PatchProducerBody {
-                    producer: UpdateProducer {
-                        name: Some("Updated Producer".to_string()),
-                        description: None,
-                    },
-                }),
+                Json(PatchProducerBody::UpdateMetadata(UpdateProducer {
+                    name: Some("Updated Producer".to_string()),
+                    description: None,
+                })),
             )
             .await;
 
@@ -512,6 +519,7 @@ mod tests {
             let state = State(AppState {
                 pool: ctx.pool.clone(),
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             });
 
             let status = producer_controller::delete_producer_by_id(jwt, state, Path(producer.id))
@@ -534,6 +542,7 @@ mod tests {
             let state = State(AppState {
                 pool: ctx.pool.clone(),
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             });
 
             let res =
@@ -558,6 +567,7 @@ mod tests {
             let state = State(AppState {
                 pool: ctx.pool.clone(),
                 mqtt_peers_tx: tx,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             });
 
             // 1. Create with forwarder1
@@ -578,19 +588,26 @@ mod tests {
                 },
             });
 
-            let res = producer_controller::post_producer(mock_jwt(user.id, user.login.clone()), state.clone(), body)
-                .await
-                .unwrap();
+            let res = producer_controller::post_producer(
+                mock_jwt(user.id, user.login.clone()),
+                state.clone(),
+                body,
+            )
+            .await
+            .unwrap();
             let producer_id = res.1.0.producer.id;
 
             let received1 = rx.try_recv().unwrap();
             assert_eq!(received1, forwarder1.id);
 
             // 3. Delete
-            let _ =
-                producer_controller::delete_producer_by_id(mock_jwt(user.id, user.login.clone()), state.clone(), Path(producer_id))
-                    .await
-                    .unwrap();
+            let _ = producer_controller::delete_producer_by_id(
+                mock_jwt(user.id, user.login.clone()),
+                state.clone(),
+                Path(producer_id),
+            )
+            .await
+            .unwrap();
 
             let received4 = rx.try_recv().unwrap();
             assert_eq!(received4, forwarder1.id);

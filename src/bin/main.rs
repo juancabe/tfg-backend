@@ -27,7 +27,7 @@ async fn main() {
     dotenv().ok();
 
     env_logger::init();
-    
+
     backend::config::CONFIG
         .set(backend::config::Config::init())
         .map_err(|_| "Config already initialized")
@@ -50,20 +50,29 @@ async fn main() {
     ));
 
     let (mqtt_peers_tx, _) = tokio::sync::broadcast::channel::<uuid::Uuid>(1024);
+    let (mqtt_erase_tx, _) = tokio::sync::broadcast::channel::<uuid::Uuid>(1024);
 
     let mqtt_config = MqttBrokerConfig::from_env();
     let mqtt_pool = pool.clone();
     let mqtt_peers_tx_clone = mqtt_peers_tx.clone();
+    let mqtt_erase_tx_clone = mqtt_erase_tx.clone();
     let (mqtt_tx, mqtt_rx) = oneshot::channel();
     std::thread::spawn(move || {
         let result =
             ntex::rt::System::new("mqtt-broker", ntex::rt::DefaultRuntime).block_on(async move {
-                MqttBroker::run(mqtt_config, mqtt_pool, mqtt_peers_tx_clone).await
+                MqttBroker::run(
+                    mqtt_config,
+                    mqtt_pool,
+                    mqtt_peers_tx_clone,
+                    mqtt_erase_tx_clone,
+                )
+                .await
             });
         let _ = mqtt_tx.send(result);
     });
 
-    let http_fut = http::Http::run_http_server(http_listen_address, pool, mqtt_peers_tx);
+    let http_fut =
+        http::Http::run_http_server(http_listen_address, pool, mqtt_peers_tx, mqtt_erase_tx);
 
     select! {
         val = mqtt_rx => {

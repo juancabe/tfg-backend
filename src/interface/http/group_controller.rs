@@ -197,6 +197,7 @@ mod tests {
             State(AppState {
                 pool: ctx.pool.clone(),
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             }),
             Path(group.id),
             Json(PatchGroupBody {
@@ -227,6 +228,7 @@ mod tests {
             State(AppState {
                 pool: ctx.pool.clone(),
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             }),
             Path(group.id),
             Json(PatchGroupBody {
@@ -249,6 +251,7 @@ mod tests {
         let state = State(AppState {
             pool: ctx.pool,
             mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+            mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
         });
 
         let res = post_group(
@@ -284,6 +287,7 @@ mod tests {
             State(AppState {
                 pool: ctx.pool.clone(),
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             }),
             Path(group.id),
         )
@@ -306,6 +310,7 @@ mod tests {
             State(AppState {
                 pool: ctx.pool.clone(),
                 mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             }),
             Path(group.id),
         )

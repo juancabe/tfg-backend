@@ -378,7 +378,7 @@ pub struct NewInternetAuth {
 }
 
 /// Database entity for MQTT broker authentication credentials of a producer.
-#[derive(Debug, Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize)]
+#[derive(Debug, Clone, Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize)]
 #[diesel(belongs_to(Producer))]
 #[diesel(primary_key(producer_id))]
 #[diesel(table_name = mqtt_broker_auths)]
@@ -389,7 +389,6 @@ pub struct MqttBrokerAuth {
     pub username: String,
     pub password_hash: String,
     pub topic: String,
-    pub subscribe_topic: String,
 }
 
 /// Insertable struct for creating new MQTT broker authentication credentials.
@@ -402,7 +401,6 @@ pub struct NewMqttBrokerAuth {
     pub username: String,
     pub password_hash: String,
     pub topic: String,
-    pub subscribe_topic: String,
 }
 
 /// Database entity for a pending producer registration request.
@@ -430,7 +428,6 @@ pub struct PendingProducerRegistration {
     pub mqtt_username: String,
     pub mqtt_password_hash: String,
     pub mqtt_topic: String,
-    pub mqtt_subscribe_topic: String,
     pub broker_host: String,
     pub broker_port: i16,
     pub x25519_pub_key_bytes_base64: Option<String>,
@@ -460,7 +457,6 @@ pub struct NewPendingProducerRegistration {
     pub mqtt_username: String,
     pub mqtt_password_hash: String,
     pub mqtt_topic: String,
-    pub mqtt_subscribe_topic: String,
     pub broker_host: String,
     pub broker_port: i16,
     pub x25519_pub_key_bytes_base64: Option<String>,

@@ -108,10 +108,10 @@ pub async fn post_pending_confirm(
     })?;
     let service: ProvisioningService<_, _, _, _, _> = state.pool.into();
     let out = service.confirm_pending(jwt.user_id, id, body)?;
-    if let Some(forwarder_id) = out.forwarder_id {
-        if let Err(e) = state.mqtt_peers_tx.send(forwarder_id) {
-            log::warn!("Failed to broadcast forwarder update: {}", e);
-        }
+    if let Some(forwarder_id) = out.forwarder_id
+        && let Err(e) = state.mqtt_peers_tx.send(forwarder_id)
+    {
+        log::warn!("Failed to broadcast forwarder update: {}", e);
     }
     Ok(Json(out))
 }
@@ -181,6 +181,7 @@ mod tests {
         State(AppState {
             pool,
             mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+            mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
         })
     }
 
@@ -741,6 +742,7 @@ mod tests {
         let state = State(AppState {
             pool: ctx.pool.clone(),
             mqtt_peers_tx: tx,
+            mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
         });
 
         let mut req = mk_pending_req(group.id, None);

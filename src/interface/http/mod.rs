@@ -98,6 +98,7 @@ impl Http {
         addr: SocketAddr,
         pool: DbPool,
         mqtt_peers_tx: tokio::sync::broadcast::Sender<uuid::Uuid>,
+        mqtt_erase_tx: tokio::sync::broadcast::Sender<uuid::Uuid>,
     ) -> Result<(), HttpError> {
         let listener = tokio::net::TcpListener::bind(addr).await?;
         log::info!("Created TcpListener on {:?}", addr);
@@ -105,6 +106,7 @@ impl Http {
         let state = AppState {
             pool,
             mqtt_peers_tx,
+            mqtt_erase_tx,
         };
 
         let openapi_doc = ApiDoc::openapi();

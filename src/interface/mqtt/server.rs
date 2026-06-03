@@ -37,8 +37,9 @@ fn is_forwarder_peers_topic(topic: &str) -> bool {
         && it.next().is_some()
         && matches!(it.next(), Some("groups"))
         && it.next().is_some()
-        && matches!(it.next(), Some("forwarder_peers"))
+        && matches!(it.next(), Some("producers"))
         && it.next().is_some()
+        && matches!(it.next(), Some("forwarder_peers"))
         && it.next().is_none()
 }
 
@@ -73,6 +74,18 @@ fn publish_forwarder_peers_snapshot(
         .sink()
         .publish(topic)
         .send_at_most_once(Bytes::from(payload))
+        .map_err(|err: SendPacketError| format!("mqtt publish failed: {err}"))?;
+
+    Ok(())
+}
+
+fn publish_erase(session: &v5::Session<ProducerIdentity>, topic: &str) -> Result<(), String> {
+    log::info!("Sending erase to: {:?}", session.state().producer_id);
+
+    session
+        .sink()
+        .publish(topic)
+        .send_at_most_once(Bytes::from(&[]))
         .map_err(|err: SendPacketError| format!("mqtt publish failed: {err}"))?;
 
     Ok(())
@@ -160,6 +173,7 @@ impl MqttBroker {
     fn control_service_factory(
         forwarder_peers_service: MqttForwarderPeersService,
         mqtt_peers_tx: tokio::sync::broadcast::Sender<uuid::Uuid>,
+        mqtt_erase_tx: tokio::sync::broadcast::Sender<uuid::Uuid>,
     ) -> impl ServiceFactory<
         v5::Control<MqttError>,
         v5::Session<ProducerIdentity>,
@@ -170,18 +184,23 @@ impl MqttBroker {
         fn_factory_with_config(move |session: v5::Session<ProducerIdentity>| {
             let forwarder_peers_service = forwarder_peers_service.clone();
             let mqtt_peers_tx = mqtt_peers_tx.clone();
+            let mqtt_erase_tx = mqtt_erase_tx.clone();
             async move {
                 Ok::<_, MqttError>(fn_service(move |control: v5::Control<MqttError>| {
                     let session = session.clone();
                     let forwarder_peers_service = forwarder_peers_service.clone();
                     let mqtt_peers_tx = mqtt_peers_tx.clone();
+                    let mqtt_erase_tx = mqtt_erase_tx.clone();
 
                     async move {
                         match control {
                             v5::Control::Protocol(v5::CtlFrame::Subscribe(mut subscribe)) => {
+                                log::info!("[control loop] received subscribe: {subscribe:?}");
+
                                 for mut subscription in subscribe.iter_mut() {
                                     let requested_qos = subscription.options().qos;
                                     let topic = subscription.topic().to_string();
+
                                     if !MqttAuthService::<PgMqttDao>::authorize_subscribe(
                                         session.state(),
                                         &topic,
@@ -213,7 +232,10 @@ impl MqttBroker {
                                             session.state().producer_id,
                                             topic,
                                         );
-                                    } else if is_forwarder_peers_topic(&topic) {
+                                        continue;
+                                    };
+
+                                    if is_forwarder_peers_topic(&topic) {
                                         let mut rx = mqtt_peers_tx.subscribe();
                                         let session = session.clone();
                                         let forwarder_peers_service =
@@ -236,16 +258,35 @@ impl MqttBroker {
                                                     Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                                                         break;
                                                     }
-                                                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                                                        // Lagged, just try to publish a new snapshot
-                                                        if let Err(err) = publish_forwarder_peers_snapshot(
-                                                            &forwarder_peers_service,
-                                                            &session,
-                                                            &topic,
-                                                        ) {
-                                                            log::warn!("MQTT forwarder_peers background push failed: {err}");
-                                                            break;
-                                                        }
+                                                    Err(tokio::sync::broadcast::error::RecvError::Lagged(l)) => {
+                                                        log::warn!("MQTT forwarder_peers recv lagged: {l}");
+                                                    }
+                                                }
+                                            }
+                                        });
+                                    } else {
+                                        // NOTE: Just have these two options right now
+                                        let mut rx = mqtt_erase_tx.subscribe();
+                                        let session = session.clone();
+                                        let topic = topic.clone();
+                                        ntex::rt::spawn(async move {
+                                            loop {
+                                                match rx.recv().await {
+                                                    Ok(producer_id) => {
+                                                        if producer_id == session.state().producer_id
+                                                            && let Err(err) = publish_erase(
+                                                                &session,
+                                                                &topic,
+                                                            ) {
+                                                                log::warn!("MQTT erase background push failed: {err}");
+                                                                break;
+                                                            }
+                                                    }
+                                                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                                                        break;
+                                                    }
+                                                    Err(tokio::sync::broadcast::error::RecvError::Lagged(l)) => {
+                                                        log::warn!("MQTT erase recv lagged: {l}");
                                                     }
                                                 }
                                             }
@@ -307,6 +348,7 @@ impl MqttBroker {
         config: MqttBrokerConfig,
         pool: DbPool,
         mqtt_peers_tx: tokio::sync::broadcast::Sender<uuid::Uuid>,
+        mqtt_erase_tx: tokio::sync::broadcast::Sender<uuid::Uuid>,
     ) -> io::Result<()> {
         let auth = MqttAuthService::from(pool.clone());
         let ingest = MqttIngestService::new(pool.clone());
@@ -329,6 +371,7 @@ impl MqttBroker {
                 let tls_acceptor = tls_acceptor.clone();
                 let forwarder_peers_service = forwarder_peers_service.clone();
                 let mqtt_peers_tx = mqtt_peers_tx.clone();
+                let mqtt_erase_tx = mqtt_erase_tx.clone();
 
                 async move {
                     chain_factory(ntex::server::openssl::SslAcceptor::new(
@@ -373,6 +416,7 @@ impl MqttBroker {
                         .control(Self::control_service_factory(
                             forwarder_peers_service.clone(),
                             mqtt_peers_tx.clone(),
+                            mqtt_erase_tx.clone(),
                         ))
                         .publish(fn_factory_with_config(
                             move |session: v5::Session<ProducerIdentity>| {

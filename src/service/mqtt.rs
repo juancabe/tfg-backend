@@ -27,7 +27,7 @@ pub enum AuthDecision {
 ///
 /// This identity is placed into MQTT session state after a successful CONNECT
 /// handshake and later reused for publish authorization.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ProducerIdentity {
     /// Producer database identifier.
     pub producer_id: Uuid,
@@ -35,8 +35,12 @@ pub struct ProducerIdentity {
     pub mqtt_username: String,
     /// Exact topic this producer is allowed to publish to.
     pub allowed_topic: String,
-    /// Exact topic this producer is allowed to subscribe to.
-    pub allowed_subscribe_topic: String,
+    /// Owner login
+    pub owner_login: String,
+    /// Owner login
+    pub group: String,
+    /// Owner login
+    pub producer_name: String,
 }
 
 /// Target information for a publish authorization.
@@ -88,22 +92,35 @@ impl<M: MqttDao> MqttAuthService<M> {
             return AuthDecision::Rejected;
         };
 
-        if !crypto_password::verify_password(&auth_row.password_hash, password_in) {
+        if !crypto_password::verify_password(&auth_row.auth.password_hash, password_in) {
             log::warn!("MQTT auth pass doesn't match");
             return AuthDecision::Rejected;
         }
 
         AuthDecision::Allowed(ProducerIdentity {
-            producer_id: auth_row.producer_id,
-            mqtt_username: auth_row.username,
-            allowed_topic: auth_row.topic,
-            allowed_subscribe_topic: auth_row.subscribe_topic,
+            producer_id: auth_row.auth.producer_id,
+            mqtt_username: auth_row.auth.username,
+            allowed_topic: auth_row.auth.topic,
+            owner_login: auth_row.owner_login,
+            group: auth_row.group_name,
+            producer_name: auth_row.producer_name,
         })
     }
 
     /// Checks if a topic filter matches the identity's allowed subscribe topic.
     pub fn authorize_subscribe(identity: &ProducerIdentity, topic_filter: &str) -> bool {
-        identity.allowed_subscribe_topic == topic_filter
+        let peers_topic = format!(
+            "/v1/users/{}/groups/{}/producers/{}/forwarder_peers",
+            identity.owner_login, identity.group, identity.producer_name
+        );
+        let erase_topic = format!(
+            "/v1/users/{}/groups/{}/producers/{}/erase",
+            identity.owner_login, identity.group, identity.producer_name
+        );
+
+        let res = topic_filter == peers_topic || topic_filter == erase_topic;
+        log::debug!("[authorize_subscribe] Result {res} for: {identity:?} @ {topic_filter}");
+        res
     }
 
     /// Authorizes a publish to a topic, checking both direct and delegated access.
@@ -396,7 +413,9 @@ mod tests {
             producer_id,
             mqtt_username: "test-user".to_string(),
             allowed_topic: allowed_topic.to_string(),
-            allowed_subscribe_topic: "/v1/forbidden".to_string(),
+            owner_login: "dummy_login".to_string(),
+            group: "dummy_group".to_string(),
+            producer_name: "dummy_prod".to_string(),
         }
     }
 
@@ -431,7 +450,6 @@ mod tests {
                 username: delegated_username,
                 password_hash: "unused".to_string(),
                 topic: delegated_topic.clone(),
-                subscribe_topic: "/v1/forbidden".to_string(),
             })
             .execute(&mut conn)
             .expect("insert delegated mqtt auth");
@@ -483,7 +501,6 @@ mod tests {
                 username: "stored-username".to_string(),
                 password_hash: "unused".to_string(),
                 topic: expected_topic,
-                subscribe_topic: "/v1/forbidden".to_string(),
             })
             .execute(&mut conn)
             .expect("insert delegated mqtt auth");
@@ -536,7 +553,6 @@ mod tests {
                 username: delegated_username,
                 password_hash: "unused".to_string(),
                 topic: delegated_topic.clone(),
-                subscribe_topic: "/v1/forbidden".to_string(),
             })
             .execute(&mut conn)
             .expect("insert delegated mqtt auth");
@@ -552,7 +568,9 @@ mod tests {
             producer_id: forwarder.id,
             mqtt_username: "forwarder-user".to_string(),
             allowed_topic: "/v1/forbidden".to_string(),
-            allowed_subscribe_topic: "/v1/forbidden".to_string(),
+            owner_login: owner.login,
+            group: group.name,
+            producer_name: forwarder.name,
         };
 
         assert!(svc.authorize_publish(&identity, &forwarder_topic).is_none());

@@ -53,7 +53,6 @@ pub struct ProvisioningWifiBundle {
     pub mqtt_username: String,
     pub mqtt_password: String,
     pub publish_topic: Option<String>,
-    pub subscribe_topic: String,
 }
 
 /// View of a pending provisioning registration.
