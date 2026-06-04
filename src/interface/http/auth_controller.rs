@@ -383,6 +383,29 @@ pub async fn get_verify_email(
     Ok(Html(body.to_string()))
 }
 
+/// `delete_account`
+///
+/// # Description
+/// Deletes the currently authenticated user's account.
+#[utoipa::path(
+    delete,
+    path = "/auth/account",
+    tag = "auth",
+    responses((status = 200, description = "Account deleted")),
+    security(("bearer_auth" = []))
+)]
+pub async fn delete_account(
+    jwt: JWT,
+    State(AppState { pool, .. }): State<AppState>,
+) -> Result<StatusCode, HttpApiError> {
+    let dao = PgIdentityDao::new(pool);
+    let service = AuthService::new(dao);
+    
+    service.delete_user(&jwt.user_id)?;
+    
+    Ok(StatusCode::OK)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1007,6 +1030,59 @@ mod tests {
 
             let res = auth_controller::post_password_reset(state, payload).await;
             assert!(res.is_err());
+        }
+
+        #[tokio::test]
+        async fn test_delete_account() {
+            let ctx = setup();
+            let state = State(AppState {
+                pool: ctx.pool.clone(),
+                mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
+            });
+
+            // Register and get token
+            let payload = RegisterPayload {
+                login: "delete_me".to_string(),
+                auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                    email: "delete_me@example.com".to_string(),
+                    pass: "password".to_string(),
+                })),
+            };
+            let res = auth_controller::post_register(state.clone(), Ok(Json(payload))).await;
+            assert!(res.is_ok());
+            let (user_id, session_token) = {
+                let dao = PgIdentityDao::new(ctx.pool.clone());
+                let user = dao.find_by_login("delete_me").unwrap().unwrap();
+                // verify email
+                let service = AuthService::new(dao);
+                let verification = PgIdentityDao::new(ctx.pool.clone()).create_email_verification(crate::model::models::NewEmailVerification {
+                    user_id: user.id,
+                    email: "delete_me@example.com",
+                    expires_at: chrono::Utc::now() + chrono::Duration::hours(24),
+                }).unwrap();
+                service.verify_email(verification.id).unwrap();
+
+                let login_payload = LoginPayload {
+                    auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                        email: "delete_me@example.com".to_string(),
+                        pass: "password".to_string(),
+                    })),
+                };
+                let tokens = service.authenticate_user(login_payload.into()).unwrap().unwrap();
+                (user.id, tokens.session_token)
+            };
+
+            let service = AuthService::new(PgIdentityDao::new(ctx.pool.clone()));
+            let jwt = service.validate_session(&session_token).unwrap();
+
+            // Perform deletion
+            let res = auth_controller::delete_account(jwt, state).await;
+            assert!(matches!(res, Ok(StatusCode::OK)));
+
+            // Verify user is gone
+            let dao = PgIdentityDao::new(ctx.pool.clone());
+            assert!(dao.find_by_id(user_id).unwrap().is_none());
         }
     }
 }

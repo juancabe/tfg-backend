@@ -7,7 +7,7 @@ use axum::{
     extract::rejection::JsonRejection,
     http::StatusCode,
     response::IntoResponse,
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 use serde::Serialize;
 use std::{net::SocketAddr, sync::Arc};
@@ -129,6 +129,10 @@ impl Http {
                 post(auth_controller::post_password_reset),
             )
             .route("/auth/verify", get(auth_controller::get_verify_email))
+            .route(
+                "/auth/account",
+                delete(auth_controller::delete_account),
+            )
             .route(
                 "/producers",
                 get(producer_controller::get_producers).post(producer_controller::post_producer),

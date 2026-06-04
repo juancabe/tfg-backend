@@ -624,6 +624,14 @@ impl<D: IdentityDao> AuthService<D> {
             refresh_token,
         })
     }
+
+    /// delete_user
+    ///
+    /// # Description
+    /// Deletes a user by ID.
+    pub fn delete_user(&self, user_id: &Uuid) -> Result<(), ServiceError> {
+        self.dao.delete_user(user_id).map_err(Into::into)
+    }
 }
 
 #[cfg(test)]
@@ -800,6 +808,32 @@ mod tests {
             ));
         }
 
+        #[tokio::test]
+        async fn test_delete_user() {
+            let ctx = setup();
+            let dao = PgIdentityDao::new(ctx.pool.clone());
+            let service = AuthService::new(dao);
+
+            let input = RegisterInput {
+                login: "todelete".to_string(),
+                auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                    email: "todelete@example.com".to_string(),
+                    pass: "pass".to_string(),
+                })),
+            };
+
+            service
+                .register_user(input)
+                .await
+                .expect("Registration should succeed");
+
+            let user = service.dao.find_by_login("todelete").unwrap().unwrap();
+            
+            service.delete_user(&user.id).expect("Delete should succeed");
+
+            let user_after = service.dao.find_by_login("todelete").unwrap();
+            assert!(user_after.is_none());
+        }
         #[tokio::test]
         async fn test_validate_session_with_refresh_token() {
             let ctx = setup();
