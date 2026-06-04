@@ -23,32 +23,6 @@ pub enum AuthKind {
     OAuth = 2,
 }
 
-/// Status of a command sent to a producer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[repr(i16)]
-pub enum CommandStatus {
-    /// Command has been sent.
-    Sent = 1,
-    /// Command was received by the producer.
-    Received = 2,
-    /// Command executed successfully.
-    ExecSuccess = 3,
-    /// Command execution failed.
-    ExecFailure = 4,
-}
-
-/// Type of command that can be sent to a producer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[repr(i16)]
-pub enum CommandKind {
-    /// Reboot the producer.
-    Reboot = 1,
-    /// Update the producer's firmware.
-    UpdateFirmware = 2,
-    /// Set WiFi credentials on the producer.
-    SetWifi = 3,
-}
-
 /// Data representation type for a template field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(i16)]
@@ -481,33 +455,6 @@ pub struct PendingProducerRegistrationUpdate {
 pub struct NewFavoriteProducer {
     pub user_id: Uuid,
     pub producer_id: Uuid,
-}
-
-// =========================================================================
-//  COMMANDS
-// =========================================================================
-
-/// Database entity for a command sent to a producer.
-#[derive(Debug, Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize)]
-#[diesel(belongs_to(Producer, foreign_key = target_producer_id))]
-#[diesel(table_name = commands)]
-pub struct Command {
-    pub id: Uuid,
-    pub target_producer_id: Uuid,
-    pub status: i16, // Map to CommandStatus
-    pub kind: i16,   // Map to CommandKind
-    pub created_at: DateTime<Utc>,
-    pub payload: JsonValue,
-}
-
-/// Insertable struct for creating a new command.
-#[derive(Debug, Insertable)]
-#[diesel(table_name = commands)]
-pub struct NewCommand {
-    pub target_producer_id: Uuid,
-    pub status: i16,
-    pub kind: i16,
-    pub payload: JsonValue,
 }
 
 // =========================================================================

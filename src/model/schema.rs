@@ -1,17 +1,6 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
-    commands (id) {
-        id -> Uuid,
-        target_producer_id -> Uuid,
-        status -> Int2,
-        kind -> Int2,
-        created_at -> Timestamptz,
-        payload -> Jsonb,
-    }
-}
-
-diesel::table! {
     data (id) {
         id -> Uuid,
         producer_id -> Uuid,
@@ -197,7 +186,6 @@ diesel::table! {
     }
 }
 
-diesel::joinable!(commands -> producers (target_producer_id));
 diesel::joinable!(data -> packet_templates (template_id));
 diesel::joinable!(data -> producers (producer_id));
 diesel::joinable!(email_auth_methods -> users (user_id));
@@ -221,7 +209,6 @@ diesel::joinable!(refresh_tokens -> users (user_id));
 diesel::joinable!(template_fields -> packet_templates (template_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
-    commands,
     data,
     email_auth_methods,
     email_verifications,
