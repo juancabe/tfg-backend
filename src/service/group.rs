@@ -155,13 +155,7 @@ impl<G: GroupDao + Clone, L: LocationDao + Clone> GroupService<G, L> {
             Err(ServiceError::Forbidden)?
         }
 
-        if let Some(ref name) = patch.name {
-            validate_firmware_compatible_name(name, "group name")?;
-        }
-
-        let name_for_error = patch.name.clone();
         let update = GroupUpdate {
-            name: patch.name,
             description: patch.description,
             location_id: None,
             is_public: patch.is_public.unwrap_or(current.is_public),
@@ -169,9 +163,7 @@ impl<G: GroupDao + Clone, L: LocationDao + Clone> GroupService<G, L> {
 
         self.group_dao
             .update_group(group_id, update)
-            .map_err(|err| {
-                map_unique_group_name_error(err, "group name", name_for_error.as_deref())
-            })
+            .map_err(Into::into)
             .map(Into::into)
     }
 }
@@ -434,39 +426,15 @@ mod tests {
                     user.id,
                     group.id,
                     interface::types::group::UpdateGroup {
-                        name: Some("UpdatedName".to_string()),
                         description: Some("Updated desc".to_string()),
                         is_public: Some(true),
                     },
                 )
                 .expect("Failed to update group");
 
-            assert_eq!(updated.name, "UpdatedName");
+            assert_eq!(updated.name, group.name);
             assert_eq!(updated.description, "Updated desc");
             assert!(updated.is_public);
-        }
-
-        #[test]
-        fn test_update_group_invalid_name() {
-            let ctx = setup();
-            let group_dao = PgGroupDao::new(ctx.pool.clone());
-            let location_dao = PgLocationDao::new(ctx.pool.clone());
-            let service = GroupService::new(group_dao, location_dao);
-            let user = create_test_user(&ctx.pool, "upd_group_inv");
-            let location = create_test_location(&ctx.pool, "upd_group_inv");
-            let group = create_test_group(&ctx.pool, user.id, location.id, "upd_group_inv");
-
-            let result = service.update_group(
-                user.id,
-                group.id,
-                interface::types::group::UpdateGroup {
-                    name: Some("has/slash".to_string()),
-                    description: None,
-                    is_public: None,
-                },
-            );
-
-            assert!(matches!(result, Err(ServiceError::TypeError(_))));
         }
 
         #[test]
@@ -484,7 +452,6 @@ mod tests {
                 other.id,
                 group.id,
                 interface::types::group::UpdateGroup {
-                    name: Some("NewName".to_string()),
                     description: None,
                     is_public: None,
                 },

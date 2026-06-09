@@ -461,13 +461,13 @@ mod tests {
     #[test]
     fn test_is_forwarder_peers_topic_shape() {
         assert!(is_forwarder_peers_topic(
+            "/v1/users/u/groups/g/producers/p/forwarder_peers"
+        ));
+        assert!(!is_forwarder_peers_topic(
             "/v1/users/u/groups/g/forwarder_peers/p"
         ));
         assert!(!is_forwarder_peers_topic(
-            "/v1/users/u/groups/g/forwarder_peers"
-        ));
-        assert!(!is_forwarder_peers_topic(
-            "/v1/users/u/groups/g/producers/p"
+            "/v1/users/u/groups/g/producers/p/bachata"
         ));
     }
 

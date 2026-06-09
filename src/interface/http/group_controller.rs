@@ -1,6 +1,3 @@
-//! Group management HTTP endpoint handlers.
-#![allow(missing_docs)]
-
 use axum::{
     Json,
     extract::{Path, State},
@@ -202,7 +199,6 @@ mod tests {
             Path(group.id),
             Json(PatchGroupBody {
                 group: UpdateGroup {
-                    name: Some("new_group_name".to_string()),
                     description: Some("new desc".to_string()),
                     is_public: Some(true),
                 },
@@ -211,7 +207,7 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(res.0.group.name, "new_group_name");
+        assert_eq!(res.0.group.name, group.name);
         assert!(res.0.group.is_public);
     }
 
@@ -233,7 +229,6 @@ mod tests {
             Path(group.id),
             Json(PatchGroupBody {
                 group: UpdateGroup {
-                    name: Some("new_group_name".to_string()),
                     description: None,
                     is_public: None,
                 },

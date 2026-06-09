@@ -258,7 +258,6 @@ pub struct NewGroup {
 #[derive(Debug, AsChangeset)]
 #[diesel(table_name = groups)]
 pub struct GroupUpdate {
-    pub name: Option<String>,
     pub description: Option<String>,
     pub location_id: Option<Uuid>,
     pub is_public: bool,
@@ -325,7 +324,6 @@ pub struct NewProducer {
 #[derive(Debug, AsChangeset)]
 #[diesel(table_name = producers)]
 pub struct ProducerUpdate {
-    pub name: Option<String>,
     pub description: Option<String>,
     pub last_seen: Option<DateTime<Utc>>,
     pub forwarder_id: Option<Uuid>,
@@ -352,7 +350,9 @@ pub struct NewInternetAuth {
 }
 
 /// Database entity for MQTT broker authentication credentials of a producer.
-#[derive(Debug, Clone, Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize,
+)]
 #[diesel(belongs_to(Producer))]
 #[diesel(primary_key(producer_id))]
 #[diesel(table_name = mqtt_broker_auths)]

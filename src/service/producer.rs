@@ -225,11 +225,7 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> Produc
             Err(ServiceError::Forbidden)?
         }
 
-        if let Some(ref name) = patch.name {
-            validate_firmware_compatible_name(name, "name")?;
-        }
-
-        let has_metadata_patch = patch.name.is_some() || patch.description.is_some();
+        let has_metadata_patch = patch.description.is_some();
 
         if !has_metadata_patch {
             let producer = self
@@ -244,9 +240,7 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> Produc
             );
         }
 
-        let name_for_error = patch.name.clone();
         let update = ProducerUpdate {
-            name: patch.name,
             description: patch.description,
             last_seen: None,
             forwarder_id: None,
@@ -254,12 +248,7 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> Produc
             forward_lora: None,
         };
 
-        let producer = self
-            .producer_dao
-            .update_metadata(producer_id, update)
-            .map_err(|err| {
-                map_unique_producer_name_error(err, "producer name", name_for_error.as_deref())
-            })?;
+        let producer = self.producer_dao.update_metadata(producer_id, update)?;
         let location = self.location_dao.get_location(producer.location_id)?;
         Ok(crate::interface::types::producer::Producer::from_producer_location(producer, location))
     }
@@ -333,6 +322,7 @@ mod tests {
             let location = create_test_location(&ctx.pool, "loc");
             let group = create_test_group(&ctx.pool, user.id, location.id, "group");
 
+            let name = "New Prod";
             let new_producer = NewProducer {
                 location: NewLocation {
                     name: Some("Prod Loc".to_string()),
@@ -340,7 +330,7 @@ mod tests {
                     geo_long: Some(2.0),
                 },
                 group_id: group.id,
-                name: "New Prod".to_string(),
+                name: name.to_string(),
                 ble_name: "BLE_New Prod".to_string(),
                 description: "Desc".to_string(),
                 forwarder_id: None,
@@ -351,7 +341,7 @@ mod tests {
             let result = service
                 .create_producer(user.id, new_producer)
                 .expect("Failed to create producer");
-            assert_eq!(result.name, "New Prod");
+            assert_eq!(result.name, name);
             assert_eq!(result.group_id, group.id);
         }
 
@@ -561,34 +551,13 @@ mod tests {
                     user.id,
                     producer.id,
                     crate::interface::types::producer::UpdateProducer {
-                        name: Some("UpdatedProducer".to_string()),
                         description: Some("Updated desc".to_string()),
                     },
                 )
                 .expect("Failed to update producer");
 
-            assert_eq!(updated.name, "UpdatedProducer");
+            assert_eq!(updated.name, producer.name);
             assert_eq!(updated.description, "Updated desc");
-        }
-
-        #[test]
-        fn test_update_producer_invalid_name() {
-            let (ctx, service) = setup_service();
-            let user = create_test_user(&ctx.pool, "upd_prod_inv_owner");
-            let location = create_test_location(&ctx.pool, "upd_prod_inv_loc");
-            let group = create_test_group(&ctx.pool, user.id, location.id, "upd_prod_inv_group");
-            let producer = create_test_producer(&ctx.pool, group.id, location.id, "upd_prod_inv");
-
-            let result = service.update_producer(
-                user.id,
-                producer.id,
-                crate::interface::types::producer::UpdateProducer {
-                    name: Some("has+plus".to_string()),
-                    description: None,
-                },
-            );
-
-            assert!(matches!(result, Err(ServiceError::TypeError(_))));
         }
 
         #[test]
@@ -603,10 +572,7 @@ mod tests {
             let result = service.update_producer(
                 other.id,
                 producer.id,
-                crate::interface::types::producer::UpdateProducer {
-                    name: Some("UpdatedProducer".to_string()),
-                    description: None,
-                },
+                crate::interface::types::producer::UpdateProducer { description: None },
             );
 
             assert!(matches!(result, Err(ServiceError::Forbidden)));

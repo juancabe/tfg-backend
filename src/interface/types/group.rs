@@ -56,8 +56,6 @@ pub struct NewGroup {
 /// Request body for updating an existing group.
 #[derive(Serialize, Deserialize, Debug, utoipa::ToSchema, Validate)]
 pub struct UpdateGroup {
-    #[validate(length(min = NAME_MIN_LEN, max = NAME_MAX_LEN), custom(function = "validate_firmware_name"))]
-    pub name: Option<String>,
     #[validate(length(min = 1, max = DESCRIPTION_MAX_LEN))]
     pub description: Option<String>,
     pub is_public: Option<bool>,

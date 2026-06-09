@@ -203,7 +203,6 @@ mod tests {
             let group = create_test_group(&ctx.pool, user.id, location.id, "update_group");
 
             let update = GroupUpdate {
-                name: Some("Updated Name".to_string()),
                 description: Some("Updated Description".to_string()),
                 location_id: None,
                 is_public: true,
@@ -213,7 +212,7 @@ mod tests {
                 .update_group(group.id, update)
                 .expect("Failed to update group");
 
-            assert_eq!(result.name, "Updated Name");
+            assert_eq!(result.name, group.name);
             assert_eq!(result.description, "Updated Description");
             assert!(result.is_public);
         }
@@ -224,7 +223,6 @@ mod tests {
             let dao = PgGroupDao::new(ctx.pool.clone());
 
             let update = GroupUpdate {
-                name: Some("Updated Name".to_string()),
                 description: None,
                 location_id: None,
                 is_public: false,
@@ -354,12 +352,13 @@ mod tests {
             let dao = PgGroupDao::new(ctx.pool.clone());
             let user = create_test_user(&ctx.pool, "mgmt_flow");
             let location = create_test_location(&ctx.pool, "mgmt_flow");
+            let name = "Initial Name";
 
             // 1. Create group
             let new_group = NewGroup {
                 owner_user_id: user.id,
                 location_id: location.id,
-                name: "Initial Name".to_string(),
+                name: name.to_string(),
                 description: "Initial Description".to_string(),
                 is_public: true,
             };
@@ -367,11 +366,10 @@ mod tests {
 
             // 2. Verify creation
             let fetched = dao.get_group(created.id).unwrap();
-            assert_eq!(fetched.name, "Initial Name");
+            assert_eq!(fetched.name, name);
 
             // 3. Update group
             let update = GroupUpdate {
-                name: Some("New Name".to_string()),
                 description: None,
                 location_id: None,
                 is_public: true,
@@ -381,7 +379,7 @@ mod tests {
             // 4. Verify update and presence in user groups
             let user_groups = dao.get_user_groups(user.id).unwrap();
             assert_eq!(user_groups.len(), 1);
-            assert_eq!(user_groups[0].name, "New Name");
+            assert_eq!(user_groups[0].name, name);
             assert!(user_groups[0].is_public);
         }
 

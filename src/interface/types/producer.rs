@@ -33,8 +33,6 @@ pub struct NewProducer {
 /// Request body for updating an existing producer.
 #[derive(Deserialize, Serialize, Debug, utoipa::ToSchema, Validate)]
 pub struct UpdateProducer {
-    #[validate(length(min = NAME_MIN_LEN, max = NAME_MAX_LEN), custom(function = "validate_firmware_name"))]
-    pub name: Option<String>,
     #[validate(length(min = 1, max = DESCRIPTION_MAX_LEN))]
     pub description: Option<String>,
 }

@@ -1,6 +1,3 @@
-//! Producer management HTTP endpoint handlers.
-#![allow(missing_docs)]
-
 use axum::{
     Json,
     extract::{Path, State},
@@ -462,19 +459,20 @@ mod tests {
                 mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
             });
 
+            let new_desc = "Updated desc";
             let res = producer_controller::patch_producer_by_id(
                 jwt,
                 state,
                 Path(producer.id),
                 Json(PatchProducerBody::UpdateMetadata(UpdateProducer {
-                    name: Some("Updated Producer".to_string()),
-                    description: Some("Updated desc".to_string()),
+                    description: Some(new_desc.to_string()),
                 })),
             )
             .await
             .unwrap();
 
-            assert_eq!(res.0.producer.name, "Updated Producer");
+            assert_eq!(res.0.producer.name, producer.name);
+            assert_eq!(res.0.producer.description, new_desc);
         }
 
         #[tokio::test]
@@ -498,7 +496,6 @@ mod tests {
                 state,
                 Path(producer.id),
                 Json(PatchProducerBody::UpdateMetadata(UpdateProducer {
-                    name: Some("Updated Producer".to_string()),
                     description: None,
                 })),
             )
