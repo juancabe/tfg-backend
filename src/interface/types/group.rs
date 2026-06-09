@@ -59,4 +59,6 @@ pub struct UpdateGroup {
     #[validate(length(min = 1, max = DESCRIPTION_MAX_LEN))]
     pub description: Option<String>,
     pub is_public: Option<bool>,
+    #[validate(nested)]
+    pub new_location: Option<NewLocation>,
 }

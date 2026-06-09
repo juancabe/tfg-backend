@@ -225,32 +225,35 @@ impl<P: ProducerDao + Clone, L: LocationDao + Clone, G: GroupDao + Clone> Produc
             Err(ServiceError::Forbidden)?
         }
 
-        let has_metadata_patch = patch.description.is_some();
-
-        if !has_metadata_patch {
-            let producer = self
-                .producer_dao
-                .get_by_id(producer_id)?
-                .ok_or(ServiceError::NotFound)?;
-            let location = self.location_dao.get_location(producer.location_id)?;
-            return Ok(
-                crate::interface::types::producer::Producer::from_producer_location(
-                    producer, location,
-                ),
-            );
+        if let Some(new_loc) = patch.new_location {
+            let loc_update: models::LocationUpdate = new_loc.try_into()?;
+            self.location_dao.update_location(current.location_id, loc_update)?;
         }
 
-        let update = ProducerUpdate {
-            description: patch.description,
-            last_seen: None,
-            forwarder_id: None,
-            lora_addr: None,
-            forward_lora: None,
-        };
+        if patch.description.is_some() {
+            let update = ProducerUpdate {
+                description: patch.description,
+                last_seen: None,
+                forwarder_id: None,
+                lora_addr: None,
+                forward_lora: None,
+            };
 
-        let producer = self.producer_dao.update_metadata(producer_id, update)?;
+            let producer = self.producer_dao.update_metadata(producer_id, update)?;
+            let location = self.location_dao.get_location(producer.location_id)?;
+            return Ok(crate::interface::types::producer::Producer::from_producer_location(producer, location));
+        }
+
+        let producer = self
+            .producer_dao
+            .get_by_id(producer_id)?
+            .ok_or(ServiceError::NotFound)?;
         let location = self.location_dao.get_location(producer.location_id)?;
-        Ok(crate::interface::types::producer::Producer::from_producer_location(producer, location))
+        Ok(
+            crate::interface::types::producer::Producer::from_producer_location(
+                producer, location,
+            ),
+        )
     }
 
     /// Rotates the authentication credentials for a producer.
@@ -552,12 +555,20 @@ mod tests {
                     producer.id,
                     crate::interface::types::producer::UpdateProducer {
                         description: Some("Updated desc".to_string()),
+                        new_location: Some(NewLocation {
+                            name: Some("Updated Loc".to_string()),
+                            geo_lat: Some(1.0),
+                            geo_long: Some(2.0),
+                        }),
                     },
                 )
                 .expect("Failed to update producer");
 
             assert_eq!(updated.name, producer.name);
             assert_eq!(updated.description, "Updated desc");
+            assert_eq!(updated.location.name, Some("Updated Loc".to_string()));
+            assert_eq!(updated.location.geo_lat, Some(1.0));
+            assert_eq!(updated.location.geo_long, Some(2.0));
         }
 
         #[test]
@@ -572,7 +583,10 @@ mod tests {
             let result = service.update_producer(
                 other.id,
                 producer.id,
-                crate::interface::types::producer::UpdateProducer { description: None },
+                crate::interface::types::producer::UpdateProducer {
+                    description: None,
+                    new_location: None,
+                },
             );
 
             assert!(matches!(result, Err(ServiceError::Forbidden)));

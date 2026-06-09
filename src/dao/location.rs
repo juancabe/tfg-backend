@@ -18,6 +18,12 @@ pub trait LocationDao {
     ) -> Result<Location, DaoError>;
     /// Retrieves a location by its ID.
     fn get_location(&self, id: Uuid) -> Result<Location, DaoError>;
+    /// Updates a location by its ID.
+    fn update_location(
+        &self,
+        id: Uuid,
+        update: crate::model::models::LocationUpdate,
+    ) -> Result<Location, DaoError>;
     /// Deletes a location by its ID.
     fn delete_location(&self, id: Uuid) -> Result<(), DaoError>;
 }
@@ -72,6 +78,20 @@ impl LocationDao for PgLocationDao {
             .find(loc_id)
             .select(Location::as_select())
             .first(conn)
+            .map_err(Into::into)
+    }
+
+    fn update_location(
+        &self,
+        loc_id: Uuid,
+        update: crate::model::models::LocationUpdate,
+    ) -> Result<Location, DaoError> {
+        use crate::model::schema::locations::dsl::*;
+        let conn = &mut self.pool.get()?;
+        diesel::update(locations.find(loc_id))
+            .set(&update)
+            .returning(Location::as_returning())
+            .get_result(conn)
             .map_err(Into::into)
     }
 
@@ -145,6 +165,42 @@ mod tests {
 
             let result = dao.get_location(loc.id);
             assert!(matches!(result, Err(DaoError::NotFound)));
+        }
+
+        #[test]
+        fn test_update_location() {
+            let ctx = setup();
+            let dao = PgLocationDao::new(ctx.pool.clone());
+            let loc = create_test_location(&ctx.pool, "update_test");
+
+            let update = crate::model::models::LocationUpdate {
+                name: Some(Some("Updated Name".to_string())),
+                geo_lat: Some(Some(12.34)),
+                geo_long: Some(Some(56.78)),
+            };
+
+            let updated = dao
+                .update_location(loc.id, update)
+                .expect("Failed to update location");
+
+            assert_eq!(updated.name, Some("Updated Name".to_string()));
+            assert_eq!(updated.geo_lat, Some(12.34));
+            assert_eq!(updated.geo_long, Some(56.78));
+
+            // Test partial update (set geo_lat to None/NULL)
+            let update_null = crate::model::models::LocationUpdate {
+                name: None,
+                geo_lat: Some(None),
+                geo_long: None,
+            };
+
+            let updated_null = dao
+                .update_location(loc.id, update_null)
+                .expect("Failed to update location to null");
+
+            assert_eq!(updated_null.name, Some("Updated Name".to_string()));
+            assert_eq!(updated_null.geo_lat, None);
+            assert_eq!(updated_null.geo_long, Some(56.78));
         }
     }
 

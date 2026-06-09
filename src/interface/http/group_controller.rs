@@ -201,6 +201,7 @@ mod tests {
                 group: UpdateGroup {
                     description: Some("new desc".to_string()),
                     is_public: Some(true),
+                    new_location: None,
                 },
             }),
         )
@@ -231,6 +232,7 @@ mod tests {
                 group: UpdateGroup {
                     description: None,
                     is_public: None,
+                    new_location: None,
                 },
             }),
         )

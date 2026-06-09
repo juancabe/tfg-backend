@@ -466,6 +466,7 @@ mod tests {
                 Path(producer.id),
                 Json(PatchProducerBody::UpdateMetadata(UpdateProducer {
                     description: Some(new_desc.to_string()),
+                    new_location: None,
                 })),
             )
             .await
@@ -497,6 +498,7 @@ mod tests {
                 Path(producer.id),
                 Json(PatchProducerBody::UpdateMetadata(UpdateProducer {
                     description: None,
+                    new_location: None,
                 })),
             )
             .await;

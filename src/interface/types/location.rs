@@ -49,3 +49,22 @@ impl TryFrom<NewLocation> for models::NewLocation {
         }
     }
 }
+
+impl TryFrom<NewLocation> for models::LocationUpdate {
+    type Error = TypeError;
+
+    fn try_from(value: NewLocation) -> Result<Self, Self::Error> {
+        value
+            .validate()
+            .map_err(|e| TypeError::Validation(e.to_string()))?;
+        match (value.geo_lat, value.geo_long) {
+            (None, None) | (Some(_), Some(_)) => Ok(Self {
+                name: Some(value.name),
+                geo_lat: Some(value.geo_lat),
+                geo_long: Some(value.geo_long),
+            }),
+            _ => Err(Error::InvalidPartialLocation)?,
+        }
+    }
+}
+

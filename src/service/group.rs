@@ -155,6 +155,11 @@ impl<G: GroupDao + Clone, L: LocationDao + Clone> GroupService<G, L> {
             Err(ServiceError::Forbidden)?
         }
 
+        if let Some(new_loc) = patch.new_location {
+            let loc_update: models::LocationUpdate = new_loc.try_into()?;
+            self.location_dao.update_location(current.location_id, loc_update)?;
+        }
+
         let update = GroupUpdate {
             description: patch.description,
             location_id: None,
@@ -428,6 +433,11 @@ mod tests {
                     interface::types::group::UpdateGroup {
                         description: Some("Updated desc".to_string()),
                         is_public: Some(true),
+                        new_location: Some(InterfaceNewLocation {
+                            name: Some("Updated Loc".to_string()),
+                            geo_lat: Some(1.0),
+                            geo_long: Some(2.0),
+                        }),
                     },
                 )
                 .expect("Failed to update group");
@@ -435,6 +445,11 @@ mod tests {
             assert_eq!(updated.name, group.name);
             assert_eq!(updated.description, "Updated desc");
             assert!(updated.is_public);
+            
+            let updated_loc = service.location_dao.get_location(updated.location_id).unwrap();
+            assert_eq!(updated_loc.name, Some("Updated Loc".to_string()));
+            assert_eq!(updated_loc.geo_lat, Some(1.0));
+            assert_eq!(updated_loc.geo_long, Some(2.0));
         }
 
         #[test]
@@ -454,6 +469,7 @@ mod tests {
                 interface::types::group::UpdateGroup {
                     description: None,
                     is_public: None,
+                    new_location: None,
                 },
             );
 

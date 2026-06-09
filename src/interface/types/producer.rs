@@ -35,6 +35,8 @@ pub struct NewProducer {
 pub struct UpdateProducer {
     #[validate(length(min = 1, max = DESCRIPTION_MAX_LEN))]
     pub description: Option<String>,
+    #[validate(nested)]
+    pub new_location: Option<NewLocation>,
 }
 
 /// API representation of a producer with its location.

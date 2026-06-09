@@ -213,6 +213,15 @@ pub struct NewLocation {
     pub geo_long: Option<f64>,
 }
 
+/// Updateable fields for a location.
+#[derive(Debug, AsChangeset)]
+#[diesel(table_name = locations)]
+pub struct LocationUpdate {
+    pub name: Option<Option<String>>,
+    pub geo_lat: Option<Option<f64>>,
+    pub geo_long: Option<Option<f64>>,
+}
+
 // =========================================================================
 //  GROUPS
 // =========================================================================
