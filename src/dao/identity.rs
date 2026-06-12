@@ -220,16 +220,21 @@ impl IdentityDao for PgIdentityDao {
         user_id_in: &Uuid,
         hashed_pass_in: &str,
     ) -> Result<EmailAuthMethod, DaoError> {
-        use crate::model::schema::email_auth_methods::dsl::*;
         let conn = &mut self.pool.get()?;
-        diesel::update(email_auth_methods.filter(user_id.eq(user_id_in)))
-            .set((
-                hashed_pass.eq(hashed_pass_in),
-                changed_pass_at.eq(Utc::now()),
-            ))
-            .returning(EmailAuthMethod::as_returning())
-            .get_result(conn)
-            .map_err(Into::into)
+        conn.transaction(|conn| {
+            diesel::update(crate::model::schema::users::dsl::users.filter(crate::model::schema::users::dsl::id.eq(user_id_in)))
+                .set(crate::model::schema::users::dsl::updated_at.eq(Utc::now()))
+                .execute(conn)?;
+
+            use crate::model::schema::email_auth_methods::dsl::*;
+            diesel::update(email_auth_methods.filter(user_id.eq(user_id_in)))
+                .set((
+                    hashed_pass.eq(hashed_pass_in),
+                    changed_pass_at.eq(Utc::now()),
+                ))
+                .returning(EmailAuthMethod::as_returning())
+                .get_result(conn)
+        }).map_err(Into::into)
     }
 
     fn create_email_verification(

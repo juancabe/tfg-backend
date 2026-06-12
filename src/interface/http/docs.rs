@@ -54,6 +54,7 @@ impl Modify for SecurityAddon {
         auth_controller::post_password_reset_request,
         auth_controller::post_password_reset,
         auth_controller::delete_account,
+        auth_controller::get_user,
         producer_controller::get_producers,
         producer_controller::get_producer_by_id,
         producer_controller::post_producer,
@@ -87,6 +88,7 @@ impl Modify for SecurityAddon {
             auth_controller::PasswordResetRequestPayload,
             auth_controller::PasswordResetPayload,
             crate::interface::types::auth::AuthMethod,
+            crate::interface::types::auth::User,
 
             producer_controller::GetProducersResponse,
             producer_controller::GetProducerResponse,

@@ -9,7 +9,7 @@ use crate::helpers::validation::{
 };
 use crate::interface::types::auth::AuthMethod;
 use crate::{
-    dao::identity::PgIdentityDao,
+    dao::identity::{PgIdentityDao, IdentityDao},
     helpers::http_app_state::AppState,
     service::auth::{
         AuthService, ChangePasswordInput, JWT, PasswordResetInput, RefreshSessionOut, TokenPair,
@@ -404,6 +404,31 @@ pub async fn delete_account(
     service.delete_user(&jwt.user_id)?;
     
     Ok(StatusCode::OK)
+}
+
+/// `get_user`
+///
+/// # Description
+/// Returns the currently authenticated user's API-visible info.
+#[utoipa::path(
+    get,
+    path = "/auth/user",
+    tag = "auth",
+    responses(
+        (status = 200, description = "Authenticated user info", body = crate::interface::types::auth::User),
+        (status = 404, description = "User not found")
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_user(
+    jwt: JWT,
+    State(AppState { pool, .. }): State<AppState>,
+) -> Result<Json<crate::interface::types::auth::User>, HttpApiError> {
+    let dao = PgIdentityDao::new(pool);
+    let user = dao.find_by_id(jwt.user_id).map_err(crate::service::ServiceError::from)?
+        .ok_or(HttpApiError::ServiceError(crate::service::ServiceError::NotFound))?;
+    
+    Ok(Json(user.into()))
 }
 
 #[cfg(test)]
@@ -1083,6 +1108,56 @@ mod tests {
             // Verify user is gone
             let dao = PgIdentityDao::new(ctx.pool.clone());
             assert!(dao.find_by_id(user_id).unwrap().is_none());
+        }
+
+        #[tokio::test]
+        async fn test_get_user_success() {
+            let ctx = setup();
+            let state = State(AppState {
+                pool: ctx.pool.clone(),
+                mqtt_peers_tx: tokio::sync::broadcast::channel(10).0,
+                mqtt_erase_tx: tokio::sync::broadcast::channel(10).0,
+            });
+
+            // Register and get token
+            let payload = RegisterPayload {
+                login: "get_user_test".to_string(),
+                auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                    email: "get_user@example.com".to_string(),
+                    pass: "password".to_string(),
+                })),
+            };
+            let _ = auth_controller::post_register(state.clone(), Ok(Json(payload))).await.unwrap();
+
+            let session_token = {
+                let dao = PgIdentityDao::new(ctx.pool.clone());
+                let user = dao.find_by_login("get_user_test").unwrap().unwrap();
+                // verify email
+                let service = AuthService::new(dao);
+                let verification = PgIdentityDao::new(ctx.pool.clone()).create_email_verification(crate::model::models::NewEmailVerification {
+                    user_id: user.id,
+                    email: "get_user@example.com",
+                    expires_at: chrono::Utc::now() + chrono::Duration::hours(24),
+                }).unwrap();
+                service.verify_email(verification.id).unwrap();
+
+                let login_payload = LoginPayload {
+                    auth_method: AuthMethod::EmailPass(EmailPass::Fields(EmailPassFields {
+                        email: "get_user@example.com".to_string(),
+                        pass: "password".to_string(),
+                    })),
+                };
+                let tokens = service.authenticate_user(login_payload.into()).unwrap().unwrap();
+                tokens.session_token
+            };
+
+            let service = AuthService::new(PgIdentityDao::new(ctx.pool.clone()));
+            let jwt = service.validate_session(&session_token).unwrap();
+
+            // Hit the endpoint
+            let res = auth_controller::get_user(jwt, state).await.unwrap();
+            
+            assert_eq!(res.0.login, "get_user_test");
         }
     }
 }

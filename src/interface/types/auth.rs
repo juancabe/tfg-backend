@@ -39,3 +39,27 @@ impl AuthMethod {
         }
     }
 }
+
+/// User details exposed to the API.
+#[derive(Serialize, Deserialize, Debug, Clone, utoipa::ToSchema)]
+pub struct User {
+    /// The user's login name.
+    pub login: String,
+    /// The date and time the user was created.
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    /// The date and time the user was last updated.
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    /// The date and time the user's token was last refreshed.
+    pub refreshed_token_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl From<crate::model::models::User> for User {
+    fn from(value: crate::model::models::User) -> Self {
+        Self {
+            login: value.login,
+            created_at: value.created_at,
+            updated_at: value.updated_at,
+            refreshed_token_at: value.refreshed_token_at,
+        }
+    }
+}

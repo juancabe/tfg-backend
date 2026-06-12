@@ -133,6 +133,7 @@ impl Http {
                 "/auth/account",
                 delete(auth_controller::delete_account),
             )
+            .route("/auth/user", get(auth_controller::get_user))
             .route(
                 "/producers",
                 get(producer_controller::get_producers).post(producer_controller::post_producer),
