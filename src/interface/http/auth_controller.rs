@@ -9,7 +9,7 @@ use crate::helpers::validation::{
 };
 use crate::interface::types::auth::AuthMethod;
 use crate::{
-    dao::identity::{PgIdentityDao, IdentityDao},
+    dao::identity::{IdentityDao, PgIdentityDao},
     helpers::http_app_state::AppState,
     service::auth::{
         AuthService, ChangePasswordInput, JWT, PasswordResetInput, RefreshSessionOut, TokenPair,
@@ -218,7 +218,7 @@ pub async fn post_register(
 
 /// `post_login`
 ///
-/// Use of [`LoginPayload`] to create a new `User` on the system
+/// Use of [`LoginPayload`] to login to the system
 #[utoipa::path(
     post,
     path = "/auth/login",
@@ -400,9 +400,9 @@ pub async fn delete_account(
 ) -> Result<StatusCode, HttpApiError> {
     let dao = PgIdentityDao::new(pool);
     let service = AuthService::new(dao);
-    
+
     service.delete_user(&jwt.user_id)?;
-    
+
     Ok(StatusCode::OK)
 }
 
@@ -425,9 +425,13 @@ pub async fn get_user(
     State(AppState { pool, .. }): State<AppState>,
 ) -> Result<Json<crate::interface::types::auth::User>, HttpApiError> {
     let dao = PgIdentityDao::new(pool);
-    let user = dao.find_by_id(jwt.user_id).map_err(crate::service::ServiceError::from)?
-        .ok_or(HttpApiError::ServiceError(crate::service::ServiceError::NotFound))?;
-    
+    let user = dao
+        .find_by_id(jwt.user_id)
+        .map_err(crate::service::ServiceError::from)?
+        .ok_or(HttpApiError::ServiceError(
+            crate::service::ServiceError::NotFound,
+        ))?;
+
     Ok(Json(user.into()))
 }
 
@@ -1081,11 +1085,13 @@ mod tests {
                 let user = dao.find_by_login("delete_me").unwrap().unwrap();
                 // verify email
                 let service = AuthService::new(dao);
-                let verification = PgIdentityDao::new(ctx.pool.clone()).create_email_verification(crate::model::models::NewEmailVerification {
-                    user_id: user.id,
-                    email: "delete_me@example.com",
-                    expires_at: chrono::Utc::now() + chrono::Duration::hours(24),
-                }).unwrap();
+                let verification = PgIdentityDao::new(ctx.pool.clone())
+                    .create_email_verification(crate::model::models::NewEmailVerification {
+                        user_id: user.id,
+                        email: "delete_me@example.com",
+                        expires_at: chrono::Utc::now() + chrono::Duration::hours(24),
+                    })
+                    .unwrap();
                 service.verify_email(verification.id).unwrap();
 
                 let login_payload = LoginPayload {
@@ -1094,7 +1100,10 @@ mod tests {
                         pass: "password".to_string(),
                     })),
                 };
-                let tokens = service.authenticate_user(login_payload.into()).unwrap().unwrap();
+                let tokens = service
+                    .authenticate_user(login_payload.into())
+                    .unwrap()
+                    .unwrap();
                 (user.id, tokens.session_token)
             };
 
@@ -1127,18 +1136,22 @@ mod tests {
                     pass: "password".to_string(),
                 })),
             };
-            let _ = auth_controller::post_register(state.clone(), Ok(Json(payload))).await.unwrap();
+            let _ = auth_controller::post_register(state.clone(), Ok(Json(payload)))
+                .await
+                .unwrap();
 
             let session_token = {
                 let dao = PgIdentityDao::new(ctx.pool.clone());
                 let user = dao.find_by_login("get_user_test").unwrap().unwrap();
                 // verify email
                 let service = AuthService::new(dao);
-                let verification = PgIdentityDao::new(ctx.pool.clone()).create_email_verification(crate::model::models::NewEmailVerification {
-                    user_id: user.id,
-                    email: "get_user@example.com",
-                    expires_at: chrono::Utc::now() + chrono::Duration::hours(24),
-                }).unwrap();
+                let verification = PgIdentityDao::new(ctx.pool.clone())
+                    .create_email_verification(crate::model::models::NewEmailVerification {
+                        user_id: user.id,
+                        email: "get_user@example.com",
+                        expires_at: chrono::Utc::now() + chrono::Duration::hours(24),
+                    })
+                    .unwrap();
                 service.verify_email(verification.id).unwrap();
 
                 let login_payload = LoginPayload {
@@ -1147,7 +1160,10 @@ mod tests {
                         pass: "password".to_string(),
                     })),
                 };
-                let tokens = service.authenticate_user(login_payload.into()).unwrap().unwrap();
+                let tokens = service
+                    .authenticate_user(login_payload.into())
+                    .unwrap()
+                    .unwrap();
                 tokens.session_token
             };
 
@@ -1156,7 +1172,7 @@ mod tests {
 
             // Hit the endpoint
             let res = auth_controller::get_user(jwt, state).await.unwrap();
-            
+
             assert_eq!(res.0.login, "get_user_test");
         }
     }
