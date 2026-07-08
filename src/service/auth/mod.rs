@@ -499,9 +499,8 @@ impl<D: IdentityDao> AuthService<D> {
                         })?;
 
                     let verify_url = format!(
-                        "http://{}:{}/auth/verify?token={}",
+                        "https://{}/auth/verify?token={}",
                         crate::config::get().get_server_name(),
-                        crate::config::get().get_http_port(),
                         verification.id
                     );
                     Self::send_mail(
@@ -828,8 +827,10 @@ mod tests {
                 .expect("Registration should succeed");
 
             let user = service.dao.find_by_login("todelete").unwrap().unwrap();
-            
-            service.delete_user(&user.id).expect("Delete should succeed");
+
+            service
+                .delete_user(&user.id)
+                .expect("Delete should succeed");
 
             let user_after = service.dao.find_by_login("todelete").unwrap();
             assert!(user_after.is_none());
